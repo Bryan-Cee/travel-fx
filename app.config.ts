@@ -46,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: 'com.bryancee.travelfx',
       versionCode: androidVersionCode(),
       adaptiveIcon: {
-        backgroundColor: '#F7F3E8',
+        backgroundColor: '#07172D',
         foregroundImage: './assets/images/android-icon-foreground.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
       },
@@ -61,11 +61,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         'expo-splash-screen',
         {
-          backgroundColor: '#F7F3E8',
+          backgroundColor: '#07172D',
           image: './assets/images/splash-icon.png',
           imageWidth: 180,
           dark: {
-            backgroundColor: '#102219',
+            backgroundColor: '#07172D',
             image: './assets/images/splash-icon.png',
           },
         },
