@@ -1,0 +1,232 @@
+name: Android APK release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic app version to use for this test build (without a leading v)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate release inputs
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$EXPO_TOKEN" ]]; then
+            echo "::error::EXPO_TOKEN is not configured. Add it as a GitHub Actions repository secret."
+            exit 1
+          fi
+          if [[ -z "$EXPO_OWNER" || -z "$EAS_PROJECT_ID" ]]; then
+            echo "::error::EXPO_OWNER and EAS_PROJECT_ID must be configured as GitHub Actions repository variables."
+            exit 1
+          fi
+          if [[ ! "$EXPO_OWNER" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "::error::EXPO_OWNER is not a valid Expo account name."
+            exit 1
+          fi
+          if [[ ! "$EAS_PROJECT_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::EAS_PROJECT_ID must be the linked Expo project's UUID."
+            exit 1
+          fi
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            if [[ "$REF_TYPE" != "tag" ]]; then
+              echo "::error::Automatic APK releases must run from a pushed tag."
+              exit 1
+            fi
+            if [[ "$REF_NAME" != v* ]]; then
+              echo "::error::Automatic release tags must start with v."
+              exit 1
+            fi
+            version="${REF_NAME#v}"
+          else
+            version="$INPUT_VERSION"
+          fi
+
+          semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          if [[ ! "$version" =~ $semver_regex ]]; then
+            echo "::error::The version must be strict SemVer (MAJOR.MINOR.PATCH with an optional prerelease and no build metadata)."
+            exit 1
+          fi
+
+          if (( RUN_NUMBER < 1 || RUN_NUMBER > 2100000000 )); then
+            echo "::error::The workflow run number cannot be used as an Android versionCode."
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=travel-fx-android-$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate project
+        run: |
+          npm run typecheck
+          npm run lint -- --max-warnings=0
+          npm test -- --coverage=false
+          npx expo-doctor
+
+      - name: Set up Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Prepare EAS release profile
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const eas = JSON.parse(fs.readFileSync('eas.json', 'utf8'));
+          const profile = eas.build?.['release-apk'];
+          if (!profile) {
+            throw new Error('eas.json is missing the release-apk build profile');
+          }
+          profile.env = {
+            ...profile.env,
+            APP_VERSION: process.env.APP_VERSION,
+            ANDROID_VERSION_CODE: process.env.ANDROID_VERSION_CODE,
+            EXPO_OWNER: process.env.EXPO_OWNER,
+            EAS_PROJECT_ID: process.env.EAS_PROJECT_ID,
+          };
+          fs.writeFileSync('eas.json', `${JSON.stringify(eas, null, 2)}\n`);
+          NODE
+
+      - name: Build Android APK on EAS
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+        run: eas build --platform android --profile release-apk --non-interactive --wait --json > eas-build.json
+
+      - name: Resolve and download APK
+        id: apk
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_url="$(
+            node - <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('eas-build.json', 'utf8'));
+          const build = Array.isArray(payload) ? payload[0] : payload;
+          if (!build || build.status !== 'FINISHED') {
+            throw new Error(`EAS build did not finish successfully (status: ${build?.status ?? 'missing'})`);
+          }
+          const url = build.artifacts?.applicationArchiveUrl ?? build.artifacts?.buildUrl;
+          if (typeof url !== 'string' || !url.startsWith('https://')) {
+            throw new Error('EAS did not return a downloadable Android application archive URL');
+          }
+          process.stdout.write(url);
+          NODE
+          )"
+          mkdir -p release
+          apk_path="release/travel-fx-$APP_VERSION.apk"
+          curl --fail --location --retry 3 --output "$apk_path" "$artifact_url"
+          test -s "$apk_path"
+          APK_PATH="$apk_path" node - <<'NODE'
+          const fs = require('node:fs');
+          const fd = fs.openSync(process.env.APK_PATH, 'r');
+          const signature = Buffer.alloc(2);
+          fs.readSync(fd, signature);
+          fs.closeSync(fd);
+          if (signature[0] !== 0x50 || signature[1] !== 0x4b) {
+            throw new Error('Downloaded EAS artifact is not an APK/ZIP archive');
+          }
+          NODE
+          echo "path=$apk_path" >> "$GITHUB_OUTPUT"
+
+      - name: Retain APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download built APK
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release
+
+      - name: Create release and attach APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          APP_VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="release/travel-fx-$APP_VERSION.apk"
+          test -s "$apk_path"
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$apk_path" --clobber
+          elif [[ "$APP_VERSION" == *-* ]]; then
+            gh release create "$TAG_NAME" "$apk_path" \
+              --verify-tag \
+              --title "Travel FX $TAG_NAME" \
+              --generate-notes \
+              --prerelease
+          else
+            gh release create "$TAG_NAME" "$apk_path" \
+              --verify-tag \
+              --title "Travel FX $TAG_NAME" \
+              --generate-notes
+          fi
