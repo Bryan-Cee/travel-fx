@@ -55,7 +55,7 @@ Jest covers parser behavior, cross-rate math, reciprocal overrides, cache freshn
 
 ## Android APK releases
 
-Pushing to `main` runs validation only; it never publishes a release. A pushed strict semantic-version tag such as `v1.2.3` or `v1.2.3-beta.1` runs the same checks, waits for an EAS cloud build using the `release-apk` profile, downloads the signed installable APK, and attaches it to the GitHub Release for that tag. The tag (minus `v`), Expo app version, APK version name, and GitHub Release version therefore match. The Android `versionCode` uses the monotonically increasing GitHub Actions run number.
+Pushing to `main` runs validation only; it never publishes a release. A pushed strict semantic-version tag such as `v1.2.3` or `v1.2.3-beta.1` runs the same checks, waits for an EAS cloud build using the `release-apk` profile, downloads the signed installable APK, and attaches it to the GitHub Release for that tag. The tag (minus `v`), Expo app version, APK version name, and GitHub Release version therefore match. The Android `versionCode` uses the monotonically increasing GitHub Actions run number. The build job allows up to six hours so free-tier EAS queue delays do not cancel the GitHub runner before Expo starts the build.
 
 One-time release setup:
 
