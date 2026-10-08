@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import ConverterScreen from '@/app/index';
 import RatesScreen from '@/app/rates';
@@ -62,14 +63,18 @@ describe('converter workflow', () => {
   it('hides and restores the calculator keypad', async () => {
     const screen = await render(<ConverterScreen />);
     expect(screen.getByLabelText('Calculator keypad')).toBeTruthy();
-    await fireEvent.press(screen.getByText('⌄ Hide keypad'));
+    expect(StyleSheet.flatten(screen.getByTestId('keypad-overlay').props.style).position).toBe('absolute');
+    await fireEvent.press(screen.getByLabelText('Hide keypad'));
     expect(screen.queryByLabelText('Calculator keypad')).toBeNull();
-    await fireEvent.press(screen.getByText('⌃ Show keypad'));
+    await fireEvent.press(screen.getByLabelText('Show keypad'));
     expect(screen.getByLabelText('Calculator keypad')).toBeTruthy();
   });
 
   it('opens the rates destination from bottom navigation', async () => {
     const screen = await render(<ConverterScreen />);
+    expect(screen.getByTestId('navigation-icon-convert', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByTestId('navigation-icon-rates', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByTestId('navigation-icon-settings', { includeHiddenElements: true })).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Open rates'));
     expect(mockReplace).toHaveBeenCalledWith('/rates');
   });
@@ -81,5 +86,18 @@ describe('converter workflow', () => {
       pathname: '/custom-rate',
       params: { base: 'USD', quote: 'EUR' },
     });
+  });
+
+  it('edits and deletes a conversion from its swipe actions', async () => {
+    const screen = await render(<ConverterScreen />);
+
+    await fireEvent.press(screen.getByLabelText('Edit EUR conversion rate'));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/custom-rate',
+      params: { base: 'USD', quote: 'EUR' },
+    });
+
+    await fireEvent.press(screen.getByLabelText('Delete EUR conversion'));
+    expect(useAppStore.getState().targetCurrencies).not.toContain('EUR');
   });
 });

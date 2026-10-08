@@ -9,6 +9,8 @@ import {
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/use-app-store';
@@ -31,7 +33,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <>
+    <GestureHandlerRootView style={styles.root}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
@@ -41,6 +43,10 @@ export default function RootLayout() {
         <Stack.Screen name="currency-picker" options={{ presentation: 'modal' }} />
         <Stack.Screen name="custom-rate" options={{ presentation: 'modal' }} />
       </Stack>
-    </>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

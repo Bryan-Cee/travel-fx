@@ -58,11 +58,11 @@ A recessed currency selector anchors the left side. The editable expression is r
 
 ### Target card
 
-Currency identity and rate metadata occupy the left. Converted value occupies the right. Custom-rate cards use the mint badge and value, with the provider comparison directly below. Tapping identity promotes the currency to source; tapping the value toggles expanded precision.
+Currency identity and rate metadata occupy the left. Converted value occupies the right. Custom-rate cards use the mint badge and value, with the provider comparison directly below. Tapping identity promotes the currency to source; tapping the value toggles expanded precision. Swiping left reveals pair-specific Edit rate and Delete actions; starting a vertical list scroll closes an open action tray.
 
 ### Calculator keypad
 
-A compact four-column grid uses surface keys, raised operator keys, and one filled mint equals key. Parentheses remain available despite the reference artifact omitting them because precedence and grouped expressions are product requirements.
+A compact four-column grid uses surface keys, raised operator keys, and one filled mint equals key. It remains fixed above the bottom navigation while conversion cards scroll behind it, with a permanently available aligned chevron control to hide or reveal it. Parentheses remain available despite the reference artifact omitting them because precedence and grouped expressions are product requirements.
 
 ### Rates management
 
@@ -71,6 +71,10 @@ Each pair card shows resolved and live rate context, a prominent Set custom or R
 ### Settings
 
 Use grouped tonal lists and native switches. Only real product settings are shown. Appearance is a three-option segmented control; custom rates remain manageable here through enable, edit, and delete actions.
+
+### Bottom navigation
+
+Each destination pairs a page-specific icon above its text label: exchange arrows for Convert, a trend line for Rates, and a gear for Settings. Selected destinations use filled mint icons and labels; inactive destinations use muted outlined icons.
 
 ### Modals
 

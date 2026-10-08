@@ -1,6 +1,7 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Redirect, router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -9,12 +10,16 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Swipeable, {
+  SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import { AppText } from '@/components/app-text';
-import { BottomNavigation } from '@/components/bottom-navigation';
+import { BOTTOM_NAVIGATION_HEIGHT, BottomNavigation } from '@/components/bottom-navigation';
 import { CalculatorKeypad } from '@/components/calculator-keypad';
+import { Chevron } from '@/components/chevron';
 import { Screen } from '@/components/screen';
-import { fontFamilies, radii, spacing, typeScale } from '@/constants/theme';
+import { fontFamilies, palette, radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { evaluateExpression } from '@/services/expression';
 import {
@@ -47,13 +52,17 @@ export default function ConverterScreen() {
     error,
     storageNotice,
     setExpressionSource,
+    removeTarget,
     refreshRates,
   } = useAppStore();
   const { colors, locale } = useAppTheme();
   const decimal = getDecimalSeparator(locale);
   const [expression, setExpression] = useState('1');
   const [showKeypad, setShowKeypad] = useState(true);
+  const [keypadOverlayHeight, setKeypadOverlayHeight] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const swipeableRefs = useRef<Record<string, SwipeableMethods | null>>({});
+  const openSwipeable = useRef<SwipeableMethods | null>(null);
   const result = useMemo(() => evaluateExpression(expression, decimal), [expression, decimal]);
   const sourceValue = result.status === 'valid' ? result.value : null;
 
@@ -114,8 +123,14 @@ export default function ConverterScreen() {
   return (
     <Screen padded={false}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: keypadOverlayHeight + spacing.xl },
+        ]}
         keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => openSwipeable.current?.close()}
+        scrollIndicatorInsets={{ bottom: keypadOverlayHeight }}
+        testID="conversion-scroll"
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
@@ -153,7 +168,10 @@ export default function ConverterScreen() {
               pressed && styles.pressed,
             ]}
           >
-            <AppText weight="bold" style={styles.sourceCurrencyText}>{sourceCurrency}⌄</AppText>
+            <View style={styles.sourceCurrencyContent}>
+              <AppText weight="bold" style={styles.sourceCurrencyText}>{sourceCurrency}</AppText>
+              <Chevron color={colors.text} direction="down" />
+            </View>
           </Pressable>
           <View style={styles.expressionColumn}>
             <TextInput
@@ -192,54 +210,124 @@ export default function ConverterScreen() {
               ? `1 ${sourceCurrency} = ${formatConvertedValue(target.rate.rate, target.code, locale, true)}`
               : 'Rate unavailable';
             return (
-              <View key={target.code} style={[styles.targetCard, { backgroundColor: colors.surface }]}>
-                <Pressable
-                  accessibilityLabel={`${target.code} ${target.value ?? 'unavailable'}`}
-                  accessibilityHint="Promote this currency to the source"
-                  accessibilityRole="button"
-                  disabled={target.value === null}
-                  onPress={() => promote(target)}
-                  style={({ pressed }) => [styles.targetIdentity, pressed && styles.pressed]}
-                >
-                  <View style={styles.targetTitleLine}>
-                    <AppText weight="extraBold" style={styles.targetCode}>{target.code}</AppText>
-                    {target.rate?.isCustom ? (
-                      <View style={[styles.customBadge, { borderColor: colors.accent }]}>
-                        <AppText tone="accent" weight="bold" style={styles.customBadgeText}>CUSTOM</AppText>
-                      </View>
-                    ) : null}
+              <Swipeable
+                childrenContainerStyle={{ backgroundColor: colors.background }}
+                containerStyle={styles.swipeable}
+                dragOffsetFromRightEdge={20}
+                friction={2}
+                key={target.code}
+                onSwipeableClose={() => {
+                  const current = swipeableRefs.current[target.code];
+                  if (openSwipeable.current === current) openSwipeable.current = null;
+                }}
+                onSwipeableWillOpen={() => {
+                  const current = swipeableRefs.current[target.code];
+                  if (openSwipeable.current && openSwipeable.current !== current) {
+                    openSwipeable.current.close();
+                  }
+                  openSwipeable.current = current;
+                }}
+                overshootRight={false}
+                ref={(instance) => {
+                  swipeableRefs.current[target.code] = instance;
+                }}
+                renderRightActions={(_progress, _translation, methods) => (
+                  <View style={styles.swipeActions}>
+                    <Pressable
+                      accessibilityLabel={`Edit ${target.code} conversion rate`}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        methods.close();
+                        router.push({
+                          pathname: '/custom-rate',
+                          params: { base: sourceCurrency, quote: target.code },
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        styles.swipeAction,
+                        { backgroundColor: colors.surfaceRaised },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Ionicons color={colors.text} name="pencil" size={20} />
+                      <AppText weight="bold" style={styles.swipeActionText}>Edit rate</AppText>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={`Delete ${target.code} conversion`}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        methods.close();
+                        removeTarget(target.code);
+                        if (hapticsEnabled) void Haptics.selectionAsync();
+                      }}
+                      style={({ pressed }) => [
+                        styles.swipeAction,
+                        { backgroundColor: colors.danger },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Ionicons color={palette.white} name="trash" size={20} />
+                      <AppText
+                        weight="bold"
+                        style={[styles.swipeActionText, { color: palette.white }]}
+                      >
+                        Delete
+                      </AppText>
+                    </Pressable>
                   </View>
-                  <AppText tone="muted" numberOfLines={1} style={styles.rateMeta}>
-                    {meta}
-                    {target.rate?.isCustom && target.liveRate
-                      ? ` · live ${formatConvertedValue(target.liveRate.rate, target.code, locale, true)}`
-                      : ''}
-                  </AppText>
-                </Pressable>
-                <Pressable
-                  accessibilityLabel={`${expanded[target.code] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.code}`}
-                  accessibilityRole="button"
-                  disabled={target.value === null}
-                  onPress={() => setExpanded((current) => ({ ...current, [target.code]: !current[target.code] }))}
-                  style={({ pressed }) => [styles.targetValueArea, pressed && styles.pressed]}
-                >
-                  <AppText
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.62}
-                    numberOfLines={1}
-                    tone={target.rate?.isCustom ? 'accent' : 'primary'}
-                    weight="extraBold"
-                    style={styles.targetValue}
+                )}
+                rightThreshold={54}
+                testID={`swipeable-${target.code}`}
+              >
+                <View style={[styles.targetCard, { backgroundColor: colors.surface }]}>
+                  <Pressable
+                    accessibilityLabel={`${target.code} ${target.value ?? 'unavailable'}`}
+                    accessibilityHint="Tap to promote. Swipe left to edit its rate or remove it."
+                    accessibilityRole="button"
+                    disabled={target.value === null}
+                    onPress={() => promote(target)}
+                    style={({ pressed }) => [styles.targetIdentity, pressed && styles.pressed]}
                   >
-                    {converted}
-                  </AppText>
-                  {target.rate?.isCustom && target.liveValue !== null ? (
-                    <AppText tone="muted" numberOfLines={1} style={styles.liveValue}>
-                      Live {formatConvertedValue(target.liveValue, target.code, locale)}
+                    <View style={styles.targetTitleLine}>
+                      <AppText weight="extraBold" style={styles.targetCode}>{target.code}</AppText>
+                      {target.rate?.isCustom ? (
+                        <View style={[styles.customBadge, { borderColor: colors.accent }]}>
+                          <AppText tone="accent" weight="bold" style={styles.customBadgeText}>CUSTOM</AppText>
+                        </View>
+                      ) : null}
+                    </View>
+                    <AppText tone="muted" numberOfLines={1} style={styles.rateMeta}>
+                      {meta}
+                      {target.rate?.isCustom && target.liveRate
+                        ? ` · live ${formatConvertedValue(target.liveRate.rate, target.code, locale, true)}`
+                        : ''}
                     </AppText>
-                  ) : null}
-                </Pressable>
-              </View>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={`${expanded[target.code] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.code}`}
+                    accessibilityRole="button"
+                    disabled={target.value === null}
+                    onPress={() => setExpanded((current) => ({ ...current, [target.code]: !current[target.code] }))}
+                    style={({ pressed }) => [styles.targetValueArea, pressed && styles.pressed]}
+                  >
+                    <AppText
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.62}
+                      numberOfLines={1}
+                      tone={target.rate?.isCustom ? 'accent' : 'primary'}
+                      weight="extraBold"
+                      style={styles.targetValue}
+                    >
+                      {converted}
+                    </AppText>
+                    {target.rate?.isCustom && target.liveValue !== null ? (
+                      <AppText tone="muted" numberOfLines={1} style={styles.liveValue}>
+                        Live {formatConvertedValue(target.liveValue, target.code, locale)}
+                      </AppText>
+                    ) : null}
+                  </Pressable>
+                </View>
+              </Swipeable>
             );
           })}
         </View>
@@ -256,14 +344,39 @@ export default function ConverterScreen() {
           <AppText tone="muted" weight="bold">＋ Add currency</AppText>
         </Pressable>
 
+      </ScrollView>
+      <View
+        onLayout={({ nativeEvent }) => {
+          const nextHeight = nativeEvent.layout.height;
+          setKeypadOverlayHeight((currentHeight) =>
+            currentHeight === nextHeight ? currentHeight : nextHeight,
+          );
+        }}
+        style={[
+          styles.keypadOverlay,
+          {
+            backgroundColor: colors.background,
+            borderTopColor: colors.border,
+          },
+          showKeypad && styles.keypadOverlayOpen,
+        ]}
+        testID="keypad-overlay"
+      >
         <Pressable
+          accessibilityLabel={showKeypad ? 'Hide keypad' : 'Show keypad'}
           accessibilityRole="button"
           onPress={() => setShowKeypad((visible) => !visible)}
           style={styles.keypadToggle}
         >
-          <AppText tone="muted" weight="semibold">
-            {showKeypad ? '⌄ Hide keypad' : '⌃ Show keypad'}
-          </AppText>
+          <View style={styles.keypadToggleContent}>
+            <Chevron
+              color={colors.muted}
+              direction={showKeypad ? 'down' : 'up'}
+            />
+            <AppText tone="muted" weight="semibold">
+              {showKeypad ? 'Hide keypad' : 'Show keypad'}
+            </AppText>
+          </View>
         </Pressable>
 
         {showKeypad ? (
@@ -273,7 +386,7 @@ export default function ConverterScreen() {
             onKey={handleKey}
           />
         ) : null}
-      </ScrollView>
+      </View>
       <BottomNavigation active="convert" />
     </Screen>
   );
@@ -281,7 +394,7 @@ export default function ConverterScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scrollContent: { paddingHorizontal: 20, paddingTop: spacing.xl, paddingBottom: spacing.xl },
+  scrollContent: { paddingHorizontal: 20, paddingTop: spacing.xl },
   pageHeader: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -308,6 +421,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: radii.sm,
   },
+  sourceCurrencyContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   sourceCurrencyText: { fontSize: 16 },
   expressionColumn: { flex: 1, alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: spacing.md },
   expressionInput: {
@@ -320,6 +438,16 @@ const styles = StyleSheet.create({
   },
   sourceResult: { width: '100%', fontSize: 31, lineHeight: 40, textAlign: 'right', letterSpacing: -0.7 },
   targetList: { gap: spacing.sm },
+  swipeable: { borderRadius: radii.md, overflow: 'hidden' },
+  swipeActions: { width: 176, flexDirection: 'row' },
+  swipeAction: {
+    width: 88,
+    minHeight: 106,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  swipeActionText: { fontSize: 12, textAlign: 'center' },
   targetCard: {
     minHeight: 106,
     borderRadius: radii.md,
@@ -346,11 +474,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: spacing.sm,
   },
+  keypadOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: BOTTOM_NAVIGATION_HEIGHT,
+    zIndex: 2,
+    elevation: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 20,
+  },
+  keypadOverlayOpen: { paddingBottom: spacing.md },
   keypadToggle: {
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.xs,
   },
+  keypadToggleContent: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   pressed: { opacity: 0.65 },
 });
