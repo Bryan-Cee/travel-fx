@@ -1,153 +1,263 @@
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { AppText } from '@/components/app-text';
+import { BottomNavigation } from '@/components/bottom-navigation';
 import { Screen } from '@/components/screen';
-import { minTouch, radii, spacing } from '@/constants/theme';
+import { radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { formatRelativeUpdate } from '@/services/format';
 import { useAppStore } from '@/store/use-app-store';
 import { ThemePreference } from '@/types';
 
+const appearanceOptions: { label: string; value: ThemePreference }[] = [
+  { label: 'Light', value: 'light' },
+  { label: 'Dark', value: 'dark' },
+  { label: 'System', value: 'system' },
+];
+
 export default function SettingsScreen() {
-  const { palette } = useAppTheme();
-  const haptics = useAppStore((state) => state.hapticsEnabled);
-  const theme = useAppStore((state) => state.themePreference);
-  const customRates = useAppStore((state) => state.customRates);
-  const setHaptics = useAppStore((state) => state.setHaptics);
-  const setTheme = useAppStore((state) => state.setThemePreference);
-  const toggleCustom = useAppStore((state) => state.toggleCustomRate);
-  const deleteCustom = useAppStore((state) => state.deleteCustomRate);
-  const resetApp = useAppStore((state) => state.resetApp);
+  const {
+    themePreference,
+    hapticsEnabled,
+    customRates,
+    rateCache,
+    refreshing,
+    setThemePreference,
+    setHaptics,
+    toggleCustomRate,
+    deleteCustomRate,
+    refreshRates,
+    resetApp,
+  } = useAppStore();
+  const { colors, locale } = useAppTheme();
+  const switchColors = {
+    false: colors.surfaceSelected,
+    true: colors.accent,
+  };
 
   return (
-    <Screen edges={['left', 'right', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Section title="Appearance">
-          <View style={styles.segment}>
-            {(['system', 'light', 'dark'] as ThemePreference[]).map((option) => (
+    <Screen padded={false}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <AppText weight="extraBold" style={styles.title}>Settings</AppText>
+
+        <SectionLabel>Appearance</SectionLabel>
+        <View
+          accessibilityRole="radiogroup"
+          style={[styles.segmented, { backgroundColor: colors.surface }]}
+        >
+          {appearanceOptions.map((option) => {
+            const selected = themePreference === option.value;
+            return (
               <Pressable
-                key={option}
                 accessibilityRole="radio"
-                accessibilityState={{ checked: theme === option }}
-                onPress={() => setTheme(option)}
-                style={[
-                  styles.segmentItem,
-                  { backgroundColor: theme === option ? palette.primary : palette.surfaceAlt },
-                ]}>
-                <Text style={{ color: theme === option ? palette.onPrimary : palette.text, fontWeight: '700' }}>
-                  {option[0].toUpperCase() + option.slice(1)}
-                </Text>
+                accessibilityState={{ selected }}
+                key={option.value}
+                onPress={() => setThemePreference(option.value)}
+                style={({ pressed }) => [
+                  styles.segment,
+                  selected && { backgroundColor: colors.accent },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <AppText
+                  weight="bold"
+                  style={selected ? { color: colors.accentText } : undefined}
+                >
+                  {option.label}
+                </AppText>
               </Pressable>
-            ))}
-          </View>
-        </Section>
+            );
+          })}
+        </View>
 
-        <Section title="Feedback">
-          <View style={[styles.row, { borderColor: palette.border }]}>
-            <View style={styles.rowText}>
-              <Text style={[styles.label, { color: palette.text }]}>Subtle haptics</Text>
-              <Text style={[styles.description, { color: palette.muted }]}>Feedback for keypad and successful calculations</Text>
+        <SectionLabel>Feedback</SectionLabel>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
+          <SettingRow
+            description="Subtle confirmation while using the keypad"
+            title="Haptics"
+          >
+            <Switch
+              accessibilityLabel="Haptics"
+              onValueChange={setHaptics}
+              thumbColor={hapticsEnabled ? colors.accentText : colors.muted}
+              trackColor={switchColors}
+              value={hapticsEnabled}
+            />
+          </SettingRow>
+        </View>
+
+        <SectionLabel>Rates</SectionLabel>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
+          <View style={styles.refreshRow}>
+            <View style={styles.rowCopy}>
+              <AppText weight="bold">Last updated</AppText>
+              <AppText tone="muted" style={styles.description}>
+                {rateCache ? formatRelativeUpdate(rateCache.fetchedAt, locale) : 'No saved rates'}
+              </AppText>
             </View>
-            <Switch value={haptics} onValueChange={setHaptics} trackColor={{ true: palette.primary }} />
+            <Pressable
+              accessibilityRole="button"
+              disabled={refreshing}
+              onPress={() => void refreshRates(true)}
+              style={styles.textAction}
+            >
+              <AppText tone="accent" weight="bold">
+                {refreshing ? 'Refreshing…' : 'Refresh now'}
+              </AppText>
+            </Pressable>
           </View>
-        </Section>
+        </View>
 
-        <Section title="Custom rates">
+        <SectionLabel>Custom rates</SectionLabel>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
           {customRates.length === 0 ? (
-            <Text style={[styles.description, { color: palette.muted }]}>
-              Create pair-specific rates from any currency card on the converter.
-            </Text>
-          ) : (
-            customRates.map((rate) => (
-              <View key={`${rate.base}-${rate.quote}`} style={[styles.customCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-                <View style={styles.rowText}>
-                  <Text style={[styles.label, { color: palette.text }]}>1 {rate.base} = {rate.rate} {rate.quote}</Text>
-                  <Text style={[styles.description, { color: palette.muted }]}>
-                    Saved {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(rate.savedAt))}
-                  </Text>
-                </View>
-                <Switch
-                  accessibilityLabel={`${rate.enabled ? 'Disable' : 'Enable'} ${rate.base} to ${rate.quote} custom rate`}
-                  value={rate.enabled}
-                  onValueChange={(enabled) => toggleCustom(rate.base, rate.quote, enabled)}
-                  trackColor={{ true: palette.primary }}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Delete ${rate.base} to ${rate.quote} custom rate`}
-                  onPress={() => deleteCustom(rate.base, rate.quote)}
-                  style={styles.deleteButton}>
-                  <Text style={[styles.deleteText, { color: palette.danger }]}>Delete</Text>
-                </Pressable>
+            <View style={styles.emptyCustom}>
+              <AppText tone="muted">
+                No custom rates. Set one from the Rates tab.
+              </AppText>
+            </View>
+          ) : customRates.map((custom, index) => (
+            <View
+              key={`${custom.base}-${custom.quote}`}
+              style={[
+                styles.customRow,
+                index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+              ]}
+            >
+              <View style={styles.rowCopy}>
+                <AppText weight="bold">{custom.base} → {custom.quote}</AppText>
+                <AppText tone="muted" style={styles.description}>
+                  1 {custom.base} = {custom.rate} {custom.quote}
+                </AppText>
               </View>
-            ))
-          )}
-        </Section>
+              <Switch
+                accessibilityLabel={`Enable ${custom.base} to ${custom.quote} custom rate`}
+                onValueChange={(enabled) => toggleCustomRate(custom.base, custom.quote, enabled)}
+                thumbColor={custom.enabled ? colors.accentText : colors.muted}
+                trackColor={switchColors}
+                value={custom.enabled}
+              />
+              <Pressable
+                accessibilityLabel={`Edit ${custom.base} to ${custom.quote} custom rate`}
+                accessibilityRole="button"
+                onPress={() => router.push({
+                  pathname: '/custom-rate',
+                  params: { base: custom.base, quote: custom.quote },
+                })}
+                style={styles.iconAction}
+              >
+                <AppText tone="accent" weight="bold">Edit</AppText>
+              </Pressable>
+              <Pressable
+                accessibilityLabel={`Delete ${custom.base} to ${custom.quote} custom rate`}
+                accessibilityRole="button"
+                onPress={() => deleteCustomRate(custom.base, custom.quote)}
+                style={styles.iconAction}
+              >
+                <AppText tone="danger" weight="bold">×</AppText>
+              </Pressable>
+            </View>
+          ))}
+        </View>
 
-        <Section title="Rates & privacy">
-          <Text style={[styles.body, { color: palette.text }]}>
-            Current fiat reference rates come from Frankfurter v2, which blends rates from central banks and official providers. Different pairs can carry different source dates.
-          </Text>
-          <Text style={[styles.body, { color: palette.text }]}>
-            Travel FX refreshes at launch when saved rates are at least 12 hours old. The last successful snapshot remains available offline. “Fetched at” is stored separately from each rate’s source date.
-          </Text>
-          <Text style={[styles.body, { color: palette.text }]}>
-            No accounts, ads, analytics, or purchase tracking. Rate requests are anonymous. Reference only — not for trading.
-          </Text>
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => {
-              void Linking.openURL('https://frankfurter.dev/').catch((error: unknown) =>
-                Alert.alert('Could not open link', error instanceof Error ? error.message : 'Try again later.'),
-              );
-            }}
-            style={styles.link}>
-            <Text style={[styles.linkText, { color: palette.primary }]}>Frankfurter documentation ↗</Text>
-          </Pressable>
-        </Section>
+        <SectionLabel>About rates</SectionLabel>
+        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+          <AppText weight="bold">Frankfurter v2</AppText>
+          <AppText tone="muted" style={styles.infoCopy}>
+            Travel FX uses Frankfurter’s blended reference rates and derives cross-rates locally.
+            Rates are cached for offline use, and fetched time is kept separate from each provider
+            source date.
+          </AppText>
+          <AppText tone="muted" weight="semibold" style={styles.infoCopy}>
+            Reference only—not for trading.
+          </AppText>
+        </View>
 
-        <Section title="Local data">
-          <Pressable
-            accessibilityRole="button"
-            onPress={() =>
-              Alert.alert('Reset Travel FX?', 'This removes saved currencies, rates, and settings from this device.', [
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            Alert.alert(
+              'Reset Travel FX?',
+              'This removes saved currencies, custom rates, preferences, and cached data.',
+              [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Reset', style: 'destructive', onPress: () => void resetApp() },
-              ])
-            }
-            style={[styles.reset, { borderColor: palette.danger }]}>
-            <Text style={[styles.resetText, { color: palette.danger }]}>Reset all local data</Text>
-          </Pressable>
-        </Section>
+              ],
+            );
+          }}
+          style={({ pressed }) => [
+            styles.reset,
+            { borderColor: colors.danger },
+            pressed && styles.pressed,
+          ]}
+        >
+          <AppText tone="danger" weight="bold">Reset local app data</AppText>
+        </Pressable>
       </ScrollView>
+      <BottomNavigation active="settings" />
     </Screen>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  const { palette } = useAppTheme();
+function SectionLabel({ children }: { children: string }) {
   return (
-    <View style={styles.section}>
-      <Text accessibilityRole="header" style={[styles.sectionTitle, { color: palette.primary }]}>{title}</Text>
+    <AppText tone="muted" weight="extraBold" style={styles.sectionLabel}>
+      {children.toLocaleUpperCase()}
+    </AppText>
+  );
+}
+
+function SettingRow({
+  children,
+  description,
+  title,
+}: {
+  children: React.ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <View style={styles.settingRow}>
+      <View style={styles.rowCopy}>
+        <AppText weight="bold" style={styles.settingTitle}>{title}</AppText>
+        <AppText tone="muted" style={styles.description}>{description}</AppText>
+      </View>
       {children}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingVertical: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.xxl },
-  section: { gap: spacing.md },
-  sectionTitle: { fontSize: 13, fontWeight: '900', letterSpacing: 1.2, textTransform: 'uppercase' },
-  segment: { flexDirection: 'row', gap: spacing.sm },
-  segmentItem: { flex: 1, minHeight: minTouch, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
-  row: { minHeight: 64, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  rowText: { flex: 1 },
-  label: { fontSize: 16, fontWeight: '700' },
-  description: { fontSize: 13, lineHeight: 18, marginTop: 2 },
-  customCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radii.md, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  deleteButton: { minWidth: minTouch, minHeight: minTouch, justifyContent: 'center' },
-  deleteText: { fontSize: 13, fontWeight: '700' },
-  body: { fontSize: 15, lineHeight: 22 },
-  link: { minHeight: minTouch, justifyContent: 'center' },
-  linkText: { fontSize: 15, fontWeight: '700' },
-  reset: { minHeight: minTouch, borderWidth: 1, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
-  resetText: { fontSize: 15, fontWeight: '800' },
+  content: { paddingHorizontal: 20, paddingTop: spacing.xl, paddingBottom: spacing.xxl },
+  title: { fontSize: typeScale.display, lineHeight: 43, letterSpacing: -1 },
+  sectionLabel: {
+    fontSize: 13,
+    letterSpacing: 0.9,
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
+  },
+  segmented: { minHeight: 56, borderRadius: radii.md, padding: 4, flexDirection: 'row' },
+  segment: { flex: 1, minHeight: 48, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
+  group: { borderRadius: radii.md, overflow: 'hidden' },
+  settingRow: { minHeight: 92, padding: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  refreshRow: { minHeight: 88, padding: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  rowCopy: { flex: 1 },
+  settingTitle: { fontSize: 17 },
+  description: { fontSize: 13, lineHeight: 19, marginTop: 3 },
+  textAction: { minHeight: 48, justifyContent: 'center' },
+  emptyCustom: { minHeight: 76, justifyContent: 'center', padding: spacing.lg },
+  customRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.lg },
+  iconAction: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  infoCard: { borderRadius: radii.md, padding: spacing.lg },
+  infoCopy: { fontSize: 14, lineHeight: 21, marginTop: spacing.sm },
+  reset: {
+    minHeight: 56,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xl,
+  },
+  pressed: { opacity: 0.65 },
 });

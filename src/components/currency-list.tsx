@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { minTouch, radii, spacing } from '@/constants/theme';
+import { AppText } from '@/components/app-text';
+import { fontFamilies, radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { Currency } from '@/types';
 
@@ -12,7 +13,7 @@ type Props = {
 };
 
 export function CurrencyList({ currencies, excluded = [], onSelect }: Props) {
-  const { palette } = useAppTheme();
+  const { colors } = useAppTheme();
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -31,17 +32,24 @@ export function CurrencyList({ currencies, excluded = [], onSelect }: Props) {
         accessibilityLabel="Search currencies"
         autoCapitalize="characters"
         clearButtonMode="while-editing"
+        cursorColor={colors.accent}
         onChangeText={setQuery}
         placeholder="Search code or currency"
-        placeholderTextColor={palette.muted}
-        style={[styles.search, { backgroundColor: palette.surface, borderColor: palette.border, color: palette.text }]}
+        placeholderTextColor={colors.muted}
+        selectionColor={colors.accent}
+        style={[
+          styles.search,
+          { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+        ]}
         value={query}
       />
       <FlatList
         data={filtered}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.code}
-        ListEmptyComponent={<Text style={[styles.empty, { color: palette.muted }]}>No matching currencies</Text>}
+        ListEmptyComponent={(
+          <AppText tone="muted" style={styles.empty}>No matching currencies</AppText>
+        )}
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
@@ -49,13 +57,15 @@ export function CurrencyList({ currencies, excluded = [], onSelect }: Props) {
             onPress={() => onSelect(item)}
             style={({ pressed }) => [
               styles.item,
-              { borderBottomColor: palette.border, opacity: pressed ? 0.6 : 1 },
-            ]}>
+              { borderBottomColor: colors.border },
+              pressed && styles.pressed,
+            ]}
+          >
             <View style={styles.codeBlock}>
-              <Text style={[styles.code, { color: palette.text }]}>{item.code}</Text>
-              <Text numberOfLines={1} style={[styles.name, { color: palette.muted }]}>{item.name}</Text>
+              <AppText weight="bold" style={styles.code}>{item.code}</AppText>
+              <AppText tone="muted" numberOfLines={1} style={styles.name}>{item.name}</AppText>
             </View>
-            <Text style={[styles.symbol, { color: palette.primary }]}>{item.symbol}</Text>
+            <AppText tone="accent" weight="semibold" style={styles.symbol}>{item.symbol}</AppText>
           </Pressable>
         )}
       />
@@ -66,14 +76,15 @@ export function CurrencyList({ currencies, excluded = [], onSelect }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, gap: spacing.md },
   search: {
-    minHeight: minTouch,
+    minHeight: 52,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.md,
     paddingHorizontal: spacing.lg,
-    fontSize: 16,
+    fontFamily: fontFamilies.medium,
+    fontSize: typeScale.body,
   },
   item: {
-    minHeight: 60,
+    minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
@@ -81,8 +92,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   codeBlock: { flex: 1 },
-  code: { fontSize: 17, fontWeight: '700' },
+  code: { fontSize: 17 },
   name: { fontSize: 14, marginTop: 2 },
-  symbol: { fontSize: 20, fontWeight: '600' },
+  symbol: { fontSize: 20 },
   empty: { padding: spacing.xl, textAlign: 'center' },
+  pressed: { opacity: 0.62 },
 });
