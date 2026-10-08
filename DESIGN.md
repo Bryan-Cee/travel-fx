@@ -74,7 +74,7 @@ Each destination pairs a page-specific icon above its text label: exchange arrow
 
 ### Modals
 
-Currency selection and custom-rate editing use self-contained modal routes with visible Cancel actions and system dismissal/back behavior. Custom-rate editing keeps the preview close to the rate input and places Save as the fixed primary action.
+Currency selection and custom-rate editing use self-contained modal routes with visible Cancel actions and system dismissal/back behavior. Custom-rate editing exposes independent From and To currency selectors rather than assuming the saved default currency, keeps the preview close to the rate input, and places Save as the fixed primary action.
 
 ## Interaction & Motion
 

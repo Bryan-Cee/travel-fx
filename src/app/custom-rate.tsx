@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { CurrencyList } from '@/components/currency-list';
 import { Screen } from '@/components/screen';
 import { fontFamilies, radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -27,13 +28,19 @@ const previewAmount = 1000;
 export default function CustomRateScreen() {
   const { colors, locale } = useAppTheme();
   const params = useLocalSearchParams<{ base?: string; quote?: string }>();
-  const base = typeof params.base === 'string' && /^[A-Z]{3}$/.test(params.base) ? params.base : '';
-  const quote = typeof params.quote === 'string' && /^[A-Z]{3}$/.test(params.quote) ? params.quote : '';
+  const initialBase = typeof params.base === 'string' && /^[A-Z]{3}$/.test(params.base) ? params.base : '';
+  const initialQuote = typeof params.quote === 'string' && /^[A-Z]{3}$/.test(params.quote) ? params.quote : '';
+  const currencies = useAppStore((state) => state.currencies);
   const customRates = useAppStore((state) => state.customRates);
   const numberFormat = useAppStore((state) => state.numberFormat);
   const rateCache = useAppStore((state) => state.rateCache);
   const saveCustomRate = useAppStore((state) => state.saveCustomRate);
   const deleteCustomRate = useAppStore((state) => state.deleteCustomRate);
+  const formatLocale = getNumberFormatLocale(locale, numberFormat);
+  const decimal = getDecimalSeparator(formatLocale);
+  const [base, setBase] = useState(initialBase);
+  const [quote, setQuote] = useState(initialQuote);
+  const [selectingCurrency, setSelectingCurrency] = useState<'base' | 'quote' | null>(null);
   const existing = useMemo(
     () => customRates.find((rate) =>
       (rate.base === base && rate.quote === quote) ||
@@ -46,12 +53,55 @@ export default function CustomRateScreen() {
       ? existing.rate
       : 1 / existing.rate
     : null;
-  const formatLocale = getNumberFormatLocale(locale, numberFormat);
-  const decimal = getDecimalSeparator(formatLocale);
   const [value, setValue] = useState(currentRate ? String(currentRate).replace('.', decimal) : '');
   const parsed = Number(value.replace(decimal, '.'));
   const valid = base !== '' && quote !== '' && base !== quote && Number.isFinite(parsed) && parsed > 0;
   const live = resolveRate(base, quote, rateCache, []);
+
+  if (selectingCurrency) {
+    const selectingBase = selectingCurrency === 'base';
+    return (
+      <Screen>
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setSelectingCurrency(null)}
+            style={styles.cancel}
+          >
+            <AppText weight="semibold">Cancel</AppText>
+          </Pressable>
+          <AppText weight="extraBold" style={styles.headerTitle}>
+            {selectingBase ? 'From currency' : 'To currency'}
+          </AppText>
+          <View style={styles.cancel} />
+        </View>
+        <CurrencyList
+          currencies={currencies}
+          excluded={[selectingBase ? quote : base].filter(Boolean)}
+          onSelect={(currency) => {
+            const nextBase = selectingBase ? currency.code : base;
+            const nextQuote = selectingBase ? quote : currency.code;
+            const nextExisting = customRates.find((rate) =>
+              (rate.base === nextBase && rate.quote === nextQuote) ||
+              (rate.base === nextQuote && rate.quote === nextBase),
+            );
+            const nextRate = nextExisting
+              ? nextExisting.base === nextBase
+                ? nextExisting.rate
+                : 1 / nextExisting.rate
+              : null;
+            if (selectingBase) {
+              setBase(currency.code);
+            } else {
+              setQuote(currency.code);
+            }
+            setValue(nextRate ? String(nextRate).replace('.', decimal) : '');
+            setSelectingCurrency(null);
+          }}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -67,102 +117,143 @@ export default function CustomRateScreen() {
           <View style={styles.cancel} />
         </View>
 
-        {base && quote ? (
-          <>
-            <ScrollView
-              contentContainerStyle={styles.content}
-              keyboardShouldPersistTaps="handled"
-            >
-              <AppText tone="muted" style={styles.label}>Currency</AppText>
-              <View style={[styles.field, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <AppText weight="bold" style={styles.fieldValue}>{quote}</AppText>
-              </View>
-
-              <AppText tone="muted" style={styles.label}>1 {base} equals</AppText>
-              <TextInput
-                accessibilityLabel={`Custom rate from ${base} to ${quote}`}
-                autoFocus
-                cursorColor={colors.accent}
-                inputMode="decimal"
-                onChangeText={setValue}
-                placeholder="0.00"
-                placeholderTextColor={colors.muted}
-                selectionColor={colors.accent}
-                style={[
-                  styles.field,
-                  styles.rateInput,
-                  { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-                ]}
-                value={value}
-              />
-
-              <AppText tone="muted" style={styles.help}>
-                {live
-                  ? `Live rate is ${formatConvertedValue(live.rate, quote, formatLocale, true)}. Your rate replaces it on the Convert screen and applies in both directions.`
-                  : 'Your rate replaces the unavailable live rate and applies in both directions.'}
-              </AppText>
-
-              {!valid && value.length > 0 ? (
-                <AppText accessibilityLiveRegion="polite" tone="danger" weight="semibold">
-                  Enter a positive, finite rate.
-                </AppText>
-              ) : null}
-
-              <View style={[styles.preview, { backgroundColor: colors.surface }]}>
-                <AppText tone="muted" style={styles.previewLabel}>
-                  Preview · {formatConvertedValue(previewAmount, base, formatLocale)} {base}
-                </AppText>
-                <AppText
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.7}
-                  numberOfLines={1}
-                  tone="accent"
-                  weight="extraBold"
-                  style={styles.previewValue}
-                >
-                  {valid
-                    ? `${formatConvertedValue(previewAmount * parsed, quote, formatLocale, true)} ${quote}`
-                    : `— ${quote}`}
-                </AppText>
-              </View>
-            </ScrollView>
-
-            <View style={styles.footer}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.pairRow}>
+            <View style={styles.currencyField}>
+              <AppText tone="muted" style={styles.pairLabel}>From</AppText>
               <Pressable
+                accessibilityLabel={`Select from currency${base ? `, ${base}` : ''}`}
                 accessibilityRole="button"
-                disabled={!valid}
-                onPress={() => {
-                  saveCustomRate({ base, quote, rate: parsed, savedAt: new Date().toISOString(), enabled: true });
-                  router.back();
-                }}
+                onPress={() => setSelectingCurrency('base')}
                 style={({ pressed }) => [
-                  styles.save,
-                  { backgroundColor: colors.accent },
-                  !valid && styles.disabled,
+                  styles.field,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
                   pressed && styles.pressed,
                 ]}
               >
-                <AppText weight="extraBold" style={[styles.saveText, { color: colors.accentText }]}>
-                  Save rate
+                <AppText tone={base ? 'primary' : 'muted'} weight="bold" style={styles.fieldValue}>
+                  {base || 'Choose'}
                 </AppText>
               </Pressable>
-              {existing ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    deleteCustomRate(existing.base, existing.quote);
-                    router.back();
-                  }}
-                  style={styles.liveButton}
-                >
-                  <AppText tone="muted" weight="bold">Use live rate instead</AppText>
-                </Pressable>
-              ) : null}
             </View>
-          </>
-        ) : (
-          <AppText tone="danger">This currency pair is invalid.</AppText>
-        )}
+            <AppText accessibilityElementsHidden importantForAccessibility="no-hide-descendants" tone="muted" style={styles.pairArrow}>
+              →
+            </AppText>
+            <View style={styles.currencyField}>
+              <AppText tone="muted" style={styles.pairLabel}>To</AppText>
+              <Pressable
+                accessibilityLabel={`Select to currency${quote ? `, ${quote}` : ''}`}
+                accessibilityRole="button"
+                onPress={() => setSelectingCurrency('quote')}
+                style={({ pressed }) => [
+                  styles.field,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <AppText tone={quote ? 'primary' : 'muted'} weight="bold" style={styles.fieldValue}>
+                  {quote || 'Choose'}
+                </AppText>
+              </Pressable>
+            </View>
+          </View>
+
+          <AppText tone="muted" style={styles.label}>
+            {base ? `1 ${base} equals` : 'Custom exchange rate'}
+          </AppText>
+          <TextInput
+            accessibilityLabel={base && quote ? `Custom rate from ${base} to ${quote}` : 'Custom rate value'}
+            autoFocus={Boolean(base && quote)}
+            cursorColor={colors.accent}
+            editable={Boolean(base && quote)}
+            inputMode="decimal"
+            onChangeText={setValue}
+            placeholder={base && quote ? '0.00' : 'Choose both currencies first'}
+            placeholderTextColor={colors.muted}
+            selectionColor={colors.accent}
+            style={[
+              styles.field,
+              styles.rateInput,
+              { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+              (!base || !quote) && styles.disabled,
+            ]}
+            value={value}
+          />
+
+          {base && quote ? (
+            <AppText tone="muted" style={styles.help}>
+              {live
+                ? `Live rate is ${formatConvertedValue(live.rate, quote, formatLocale, true)}. Your rate replaces it on the Convert screen and applies in both directions.`
+                : 'Your rate replaces the unavailable live rate and applies in both directions.'}
+            </AppText>
+          ) : (
+            <AppText tone="muted" style={styles.help}>
+              Choose the two currencies for this custom exchange rate.
+            </AppText>
+          )}
+
+          {!valid && value.length > 0 ? (
+            <AppText accessibilityLiveRegion="polite" tone="danger" weight="semibold">
+              Enter a positive, finite rate.
+            </AppText>
+          ) : null}
+
+          <View style={[styles.preview, { backgroundColor: colors.surface }]}>
+            <AppText tone="muted" style={styles.previewLabel}>
+              {base
+                ? `Preview · ${formatConvertedValue(previewAmount, base, formatLocale)} ${base}`
+                : 'Preview'}
+            </AppText>
+            <AppText
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              numberOfLines={1}
+              tone="accent"
+              weight="extraBold"
+              style={styles.previewValue}
+            >
+              {valid
+                ? `${formatConvertedValue(previewAmount * parsed, quote, formatLocale, true)} ${quote}`
+                : `—${quote ? ` ${quote}` : ''}`}
+            </AppText>
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!valid}
+            onPress={() => {
+              saveCustomRate({ base, quote, rate: parsed, savedAt: new Date().toISOString(), enabled: true });
+              router.back();
+            }}
+            style={({ pressed }) => [
+              styles.save,
+              { backgroundColor: colors.accent },
+              !valid && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <AppText weight="extraBold" style={[styles.saveText, { color: colors.accentText }]}>
+              Save rate
+            </AppText>
+          </Pressable>
+          {existing ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                deleteCustomRate(existing.base, existing.quote);
+                router.back();
+              }}
+              style={styles.liveButton}
+            >
+              <AppText tone="muted" weight="bold">Use live rate instead</AppText>
+            </Pressable>
+          ) : null}
+        </View>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -179,6 +270,10 @@ const styles = StyleSheet.create({
   cancel: { width: 88, minHeight: 48, justifyContent: 'center' },
   headerTitle: { flex: 1, fontSize: typeScale.heading, textAlign: 'center' },
   content: { paddingTop: spacing.xxl, paddingBottom: spacing.xl },
+  pairRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+  currencyField: { flex: 1 },
+  pairLabel: { fontSize: typeScale.body, marginBottom: spacing.sm },
+  pairArrow: { fontSize: 22, lineHeight: 64, height: 64 },
   label: { fontSize: typeScale.body, marginBottom: spacing.sm, marginTop: spacing.xl },
   field: {
     minHeight: 64,
