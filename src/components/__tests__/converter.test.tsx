@@ -1,6 +1,7 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
+import CustomRateScreen from '@/app/custom-rate';
 import ConverterScreen from '@/app/index';
 import RatesScreen from '@/app/rates';
 import SettingsScreen from '@/app/settings';
@@ -9,12 +10,14 @@ import { useAppStore } from '@/store/use-app-store';
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
+let mockSearchParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
   router: {
     back: (...args: unknown[]) => mockBack(...args),
     push: (...args: unknown[]) => mockPush(...args),
     replace: (...args: unknown[]) => mockReplace(...args),
   },
+  useLocalSearchParams: () => mockSearchParams,
 }));
 
 describe('converter workflow', () => {
@@ -22,9 +25,14 @@ describe('converter workflow', () => {
     mockPush.mockClear();
     mockReplace.mockClear();
     mockBack.mockClear();
+    mockSearchParams = {};
     useAppStore.setState({
       initialized: true,
       onboardingComplete: true,
+      currencies: [
+        { code: 'EUR', name: 'Euro', symbol: '€' },
+        { code: 'USD', name: 'US Dollar', symbol: '$' },
+      ],
       sourceCurrency: 'USD',
       defaultCurrency: 'USD',
       targetCurrencies: ['EUR'],
@@ -177,6 +185,23 @@ describe('converter workflow', () => {
     });
   });
 
+  it('lets users choose both currencies for a new custom rate', async () => {
+    const screen = await render(<CustomRateScreen />);
+
+    expect(screen.getByLabelText('Custom rate value').props.editable).toBe(false);
+    await fireEvent.press(screen.getByLabelText('Select from currency'));
+    await fireEvent.press(screen.getByLabelText('Select Euro, EUR'));
+    await fireEvent.press(screen.getByLabelText('Select to currency'));
+    await fireEvent.press(screen.getByLabelText('Select US Dollar, USD'));
+    await fireEvent.changeText(screen.getByLabelText('Custom rate from EUR to USD'), '1.2');
+    await fireEvent.press(screen.getByText('Save rate'));
+
+    expect(useAppStore.getState().customRates).toEqual([
+      expect.objectContaining({ base: 'EUR', quote: 'USD', rate: 1.2, enabled: true }),
+    ]);
+    expect(mockBack).toHaveBeenCalled();
+  });
+
   it('edits and deletes a conversion from its swipe actions', async () => {
     const screen = await render(<ConverterScreen />);
 
@@ -219,7 +244,7 @@ describe('converter workflow', () => {
     expect(useAppStore.getState().targetCurrencies).toContain('EUR');
   });
 
-  it('opens default currency and number format preferences from Settings', async () => {
+  it('opens currency, number format, and custom-rate preferences from Settings', async () => {
     const screen = await render(<SettingsScreen />);
 
     await fireEvent.press(screen.getByLabelText('Default currency, USD'));
@@ -230,5 +255,8 @@ describe('converter workflow', () => {
 
     await fireEvent.press(screen.getByLabelText('Number format, System'));
     expect(mockPush).toHaveBeenCalledWith('/number-format');
+
+    await fireEvent.press(screen.getByLabelText('Add custom rate'));
+    expect(mockPush).toHaveBeenCalledWith('/custom-rate');
   });
 });

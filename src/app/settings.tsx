@@ -141,7 +141,7 @@ export default function SettingsScreen() {
           {customRates.length === 0 ? (
             <View style={styles.emptyCustom}>
               <AppText tone="muted">
-                No custom rates. Set one from the Rates tab.
+                No custom rates yet.
               </AppText>
             </View>
           ) : customRates.map((custom, index) => (
@@ -186,6 +186,18 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
           ))}
+          <Pressable
+            accessibilityLabel="Add custom rate"
+            accessibilityRole="button"
+            onPress={() => router.push('/custom-rate')}
+            style={({ pressed }) => [
+              styles.addCustom,
+              { borderTopColor: colors.border },
+              pressed && styles.pressed,
+            ]}
+          >
+            <AppText tone="accent" weight="bold">＋ Add custom rate</AppText>
+          </Pressable>
         </View>
 
         <SectionLabel>About rates</SectionLabel>
@@ -305,6 +317,12 @@ const styles = StyleSheet.create({
   textAction: { minHeight: 48, justifyContent: 'center' },
   emptyCustom: { minHeight: 76, justifyContent: 'center', padding: spacing.lg },
   customRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.lg },
+  addCustom: {
+    minHeight: 56,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconAction: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   infoCard: { borderRadius: radii.md, padding: spacing.lg },
   infoCopy: { fontSize: 14, lineHeight: 21, marginTop: spacing.sm },
