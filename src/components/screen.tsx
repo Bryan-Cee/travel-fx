@@ -1,26 +1,27 @@
-import { ReactNode } from 'react';
-import { StyleSheet, View, ViewStyle } from 'react-native';
+import { PropsWithChildren } from 'react';
+import { StyleSheet, View, ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { spacing } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
-type Props = {
-  children: ReactNode;
-  style?: ViewStyle;
-  edges?: ('top' | 'right' | 'bottom' | 'left')[];
+type ScreenProps = PropsWithChildren<ViewProps> & {
+  padded?: boolean;
 };
 
-export function Screen({ children, style, edges = ['top', 'left', 'right'] }: Props) {
-  const { palette } = useAppTheme();
+export function Screen({ children, padded = true, style, ...props }: ScreenProps) {
+  const { colors } = useAppTheme();
+
   return (
-    <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: palette.background }]}>
-      <View style={[styles.content, style]}>{children}</View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+      <View {...props} style={[styles.content, padded && styles.padded, style]}>
+        {children}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: spacing.lg },
+  content: { flex: 1 },
+  padded: { paddingHorizontal: 20 },
 });

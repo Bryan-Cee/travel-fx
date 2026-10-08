@@ -13,6 +13,18 @@ npm start
 
 Scan the QR code with Expo Go, or press `i`, `a`, or `w` for iOS, Android, or web.
 
+### Local Android debugging
+
+Install Android Studio, JDK 17, Android SDK Platform 36, and an Android emulator. Set `ANDROID_HOME` and add the emulator and platform tools to `PATH` as described in the [Expo Android Studio guide](https://docs.expo.dev/workflow/android-studio-emulator/).
+
+With an emulator running, compile and install the Metro-connected debug variant:
+
+```bash
+npm run android
+```
+
+The first run generates the ignored `android/` project through Expo Continuous Native Generation and opens the app on the selected emulator or connected device. The wrapper also enables Java native access required by current Android native tooling. Open that generated `android/` directory in Android Studio for native logs, breakpoints, and profiling. For normal TypeScript-only changes after the first build, leave the installed app in place and run `npm start`, then press `a` in the Expo terminal. Re-run `npm run android` after changing native dependencies or app configuration.
+
 ## Commands
 
 ```bash
@@ -32,7 +44,7 @@ npx expo-doctor    # Validate Expo dependencies and config
 - `src/components`: reusable React Native primitive components.
 - `src/store`: Zustand orchestration and persisted user state.
 - `src/services`: Frankfurter API client, cross-rate/custom-rate resolution, expression parser, locale formatting, and versioned persistence.
-- `src/constants`: centralized forest-green and sand design tokens.
+- `src/constants`: centralized ink, slate, mint, and adaptive light-theme design tokens.
 - `src/i18n`: English strings separated for future localization.
 
 The calculator uses a purpose-built tokenizer and recursive-descent parser. It never uses `eval`; incomplete input remains editable and invalid input is surfaced. Provider rates are cached as a USD snapshot and cross-rates are derived locally without reducing internal precision.

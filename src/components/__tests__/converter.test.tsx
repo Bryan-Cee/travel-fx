@@ -1,16 +1,22 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
 import ConverterScreen from '@/app/index';
+import RatesScreen from '@/app/rates';
 import { useAppStore } from '@/store/use-app-store';
 
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
 jest.mock('expo-router', () => ({
-  router: { push: (...args: unknown[]) => mockPush(...args), replace: jest.fn() },
+  router: {
+    push: (...args: unknown[]) => mockPush(...args),
+    replace: (...args: unknown[]) => mockReplace(...args),
+  },
 }));
 
 describe('converter workflow', () => {
   beforeEach(() => {
     mockPush.mockClear();
+    mockReplace.mockClear();
     useAppStore.setState({
       initialized: true,
       onboardingComplete: true,
@@ -33,10 +39,10 @@ describe('converter workflow', () => {
 
   it('updates converted values from calculator input', async () => {
     const screen = await render(<ConverterScreen />);
-    expect(screen.getByText('€0.90')).toBeTruthy();
+    expect(screen.getByText('0.90')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Clear'));
     await fireEvent.press(screen.getByLabelText('2'));
-    expect(screen.getByText('€1.80')).toBeTruthy();
+    expect(screen.getByText('1.80')).toBeTruthy();
   });
 
   it('promotes a target to source while preserving its value', async () => {
@@ -49,7 +55,31 @@ describe('converter workflow', () => {
 
   it('opens the add-currency flow', async () => {
     const screen = await render(<ConverterScreen />);
-    await fireEvent.press(screen.getByText('＋ Add'));
+    await fireEvent.press(screen.getByText('＋ Add currency'));
     expect(mockPush).toHaveBeenCalledWith('/currency-picker');
+  });
+
+  it('hides and restores the calculator keypad', async () => {
+    const screen = await render(<ConverterScreen />);
+    expect(screen.getByLabelText('Calculator keypad')).toBeTruthy();
+    await fireEvent.press(screen.getByText('⌄ Hide keypad'));
+    expect(screen.queryByLabelText('Calculator keypad')).toBeNull();
+    await fireEvent.press(screen.getByText('⌃ Show keypad'));
+    expect(screen.getByLabelText('Calculator keypad')).toBeTruthy();
+  });
+
+  it('opens the rates destination from bottom navigation', async () => {
+    const screen = await render(<ConverterScreen />);
+    await fireEvent.press(screen.getByLabelText('Open rates'));
+    expect(mockReplace).toHaveBeenCalledWith('/rates');
+  });
+
+  it('opens pair-specific custom-rate editing from Rates', async () => {
+    const screen = await render(<RatesScreen />);
+    await fireEvent.press(screen.getByText('Set custom'));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/custom-rate',
+      params: { base: 'USD', quote: 'EUR' },
+    });
   });
 });

@@ -53,14 +53,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     plugins: [
       'expo-router',
+      'expo-font',
       [
         'expo-splash-screen',
         {
-          backgroundColor: '#07172D',
+          backgroundColor: '#101820',
           image: './assets/images/icon.png',
           imageWidth: 180,
           dark: {
-            backgroundColor: '#07172D',
+            backgroundColor: '#101820',
             image: './assets/images/icon.png',
           },
         },

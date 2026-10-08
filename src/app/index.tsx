@@ -1,283 +1,356 @@
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
-import { getLocales } from 'expo-localization';
-import { useEffect, useState } from 'react';
+import { Redirect, router } from 'expo-router';
+import { useMemo, useState } from 'react';
 import {
-  AccessibilityInfo,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
+  TextInput,
   View,
 } from 'react-native';
 
+import { AppText } from '@/components/app-text';
+import { BottomNavigation } from '@/components/bottom-navigation';
 import { CalculatorKeypad } from '@/components/calculator-keypad';
 import { Screen } from '@/components/screen';
-import { minTouch, radii, spacing } from '@/constants/theme';
+import { fontFamilies, radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { evaluateExpression } from '@/services/expression';
-import { formatCurrencyValue, formatPlainNumber, formatRelativeUpdate, getDecimalSeparator } from '@/services/format';
-import { isCacheFresh, resolveRate } from '@/services/rates';
+import {
+  formatConvertedValue,
+  formatPlainNumber,
+  formatRelativeUpdate,
+  getDecimalSeparator,
+} from '@/services/format';
+import { resolveRate } from '@/services/rates';
 import { useAppStore } from '@/store/use-app-store';
 
+type TargetResult = {
+  code: string;
+  value: number | null;
+  liveValue: number | null;
+  liveRate: ReturnType<typeof resolveRate>;
+  rate: ReturnType<typeof resolveRate>;
+};
+
 export default function ConverterScreen() {
-  const { palette } = useAppTheme();
-  const locale = getLocales()[0]?.languageTag ?? 'en-US';
-  const decimalSeparator = getDecimalSeparator(locale);
-  const onboardingComplete = useAppStore((state) => state.onboardingComplete);
-  const source = useAppStore((state) => state.sourceCurrency);
-  const targets = useAppStore((state) => state.targetCurrencies);
-  const cache = useAppStore((state) => state.rateCache);
-  const customRates = useAppStore((state) => state.customRates);
-  const error = useAppStore((state) => state.error);
-  const notice = useAppStore((state) => state.storageNotice);
-  const refreshing = useAppStore((state) => state.refreshing);
-  const refreshRates = useAppStore((state) => state.refreshRates);
-  const removeTarget = useAppStore((state) => state.removeTarget);
-  const moveTarget = useAppStore((state) => state.moveTarget);
-  const promote = useAppStore((state) => state.setExpressionSource);
-  const hapticsEnabled = useAppStore((state) => state.hapticsEnabled);
+  const {
+    initialized,
+    onboardingComplete,
+    sourceCurrency,
+    targetCurrencies,
+    hapticsEnabled,
+    customRates,
+    rateCache,
+    refreshing,
+    error,
+    storageNotice,
+    setExpressionSource,
+    refreshRates,
+  } = useAppStore();
+  const { colors, locale } = useAppTheme();
+  const decimal = getDecimalSeparator(locale);
   const [expression, setExpression] = useState('1');
+  const [showKeypad, setShowKeypad] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const result = evaluateExpression(expression, decimalSeparator);
+  const result = useMemo(() => evaluateExpression(expression, decimal), [expression, decimal]);
+  const sourceValue = result.status === 'valid' ? result.value : null;
 
-  useEffect(() => {
-    if (!onboardingComplete) router.replace('/onboarding');
-  }, [onboardingComplete]);
+  const targets = useMemo<TargetResult[]>(() => targetCurrencies.map((code) => {
+    const rate = resolveRate(sourceCurrency, code, rateCache, customRates);
+    const liveRate = resolveRate(sourceCurrency, code, rateCache, []);
+    return {
+      code,
+      value: rate && sourceValue !== null ? sourceValue * rate.rate : null,
+      liveValue: liveRate && sourceValue !== null ? sourceValue * liveRate.rate : null,
+      liveRate,
+      rate,
+    };
+  }), [customRates, rateCache, sourceCurrency, sourceValue, targetCurrencies]);
 
-  if (!onboardingComplete) return null;
-  const numericValue = result.status === 'valid' ? result.value : null;
+  if (!initialized) {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <AppText tone="muted">Preparing your currencies…</AppText>
+        </View>
+      </Screen>
+    );
+  }
+  if (!onboardingComplete) return <Redirect href="/onboarding" />;
 
-  const handleKey = (key: string) => {
-    if (key === 'C') {
-      setExpression('');
-      return;
-    }
-    if (key === '⌫') {
-      setExpression((current) => Array.from(current).slice(0, -1).join(''));
-      return;
-    }
-    if (key === '=') {
+  function updateExpression(next: string) {
+    setExpression(next.slice(0, 80));
+  }
+
+  function handleKey(key: string) {
+    if (key === 'clear') return updateExpression('');
+    if (key === 'backspace') return updateExpression(expression.slice(0, -1));
+    if (key === 'equals') {
       if (result.status === 'valid') {
-        const formatted = formatPlainNumber(result.value, locale);
-        setExpression(formatted);
-        void AccessibilityInfo.announceForAccessibility(`Equals ${formatted}`);
-        if (hapticsEnabled) {
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch((hapticError: unknown) =>
-            console.warn('Haptic feedback failed', hapticError),
-          );
-        }
-      } else {
-        void AccessibilityInfo.announceForAccessibility('Expression is not complete');
+        updateExpression(formatPlainNumber(result.value, locale, 12));
+        if (hapticsEnabled) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (hapticsEnabled) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
       return;
     }
-    setExpression((current) => current + key);
-  };
+    updateExpression(expression + key);
+  }
 
-  const promoteTarget = (target: string, converted: number) => {
-    const newTargets = [source, ...targets.filter((code) => code !== target)];
-    promote(target, newTargets);
-    setExpression(formatPlainNumber(converted, locale));
-    void AccessibilityInfo.announceForAccessibility(`${target} is now the source currency`);
-  };
+  function promote(target: TargetResult) {
+    if (target.value === null) return;
+    const nextTargets = [sourceCurrency, ...targetCurrencies.filter((code) => code !== target.code)];
+    setExpressionSource(target.code, nextTargets);
+    updateExpression(formatPlainNumber(target.value, locale, 12));
+    if (hapticsEnabled) void Haptics.selectionAsync();
+  }
+
+  const lastUpdate = rateCache
+    ? formatRelativeUpdate(rateCache.fetchedAt, locale)
+    : 'not available';
 
   return (
-    <Screen>
+    <Screen padded={false}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshRates(true)} tintColor={palette.primary} />
-        }>
-        <View style={styles.topbar}>
-          <View>
-            <Text style={[styles.brand, { color: palette.primary }]}>TRAVEL FX</Text>
-            <Text style={[styles.subtitle, { color: palette.muted }]}>Fast reference rates, ready offline</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open settings"
-            onPress={() => router.push('/settings')}
-            style={({ pressed }) => [styles.iconButton, { backgroundColor: palette.surfaceAlt, opacity: pressed ? 0.7 : 1 }]}>
-            <Text style={[styles.iconText, { color: palette.text }]}>⚙</Text>
-          </Pressable>
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void refreshRates(true)}
+            tintColor={colors.accent}
+          />
+        )}
+      >
+        <View style={styles.pageHeader}>
+          <AppText weight="extraBold" style={styles.displayTitle}>Convert</AppText>
+          <AppText tone="muted" style={styles.status}>
+            {rateCache ? `Live rates · ${lastUpdate}` : 'Rates unavailable'}
+          </AppText>
         </View>
 
-        {(error || notice) && (
+        {(storageNotice || error) ? (
           <View
             accessibilityLiveRegion="polite"
-            style={[styles.banner, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
-            <Text style={[styles.bannerText, { color: error ? palette.warning : palette.muted }]}>{error ?? notice}</Text>
+            style={[styles.notice, { backgroundColor: colors.surface, borderColor: error ? colors.danger : colors.border }]}
+          >
+            <AppText tone={error ? 'danger' : 'muted'} style={styles.noticeText}>
+              {error ?? storageNotice}
+            </AppText>
           </View>
-        )}
+        ) : null}
 
-        <View style={[styles.sourceCard, { backgroundColor: palette.primary }]}>
-          <Text style={[styles.sourceLabel, { color: palette.onPrimary }]}>FROM · {source}</Text>
-          <Text
-            accessibilityLabel={`${source} expression ${expression || 'empty'}`}
-            adjustsFontSizeToFit
-            minimumFontScale={0.55}
-            numberOfLines={1}
-            style={[styles.expression, { color: palette.onPrimary }]}>
-            {expression || '0'}
-          </Text>
-          <Text style={[styles.expressionStatus, { color: palette.onPrimary }]}>
-            {result.status === 'valid'
-              ? `= ${formatCurrencyValue(result.value, source, locale, true)}`
-              : result.status === 'invalid'
-                ? result.message
-                : 'Keep typing…'}
-          </Text>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text accessibilityRole="header" style={[styles.sectionTitle, { color: palette.text }]}>Your currencies</Text>
+        <View style={[styles.sourceCard, { backgroundColor: colors.surface }]}>
           <Pressable
+            accessibilityLabel={`Change source currency, currently ${sourceCurrency}`}
             accessibilityRole="button"
-            onPress={() => router.push('/currency-picker')}
-            style={({ pressed }) => [styles.addButton, { borderColor: palette.primary, opacity: pressed ? 0.7 : 1 }]}>
-            <Text style={[styles.addButtonText, { color: palette.primary }]}>＋ Add</Text>
+            onPress={() => router.push({ pathname: '/currency-picker', params: { mode: 'source' } })}
+            style={({ pressed }) => [
+              styles.sourceCurrency,
+              { backgroundColor: colors.backgroundDeep },
+              pressed && styles.pressed,
+            ]}
+          >
+            <AppText weight="bold" style={styles.sourceCurrencyText}>{sourceCurrency}⌄</AppText>
           </Pressable>
+          <View style={styles.expressionColumn}>
+            <TextInput
+              accessibilityLabel={`${sourceCurrency} expression ${expression}`}
+              accessibilityHint="Enter a calculator expression"
+              allowFontScaling
+              autoCorrect={false}
+              cursorColor={colors.accent}
+              onChangeText={updateExpression}
+              onFocus={() => setShowKeypad(true)}
+              placeholder="0"
+              placeholderTextColor={colors.muted}
+              selectionColor={colors.accent}
+              showSoftInputOnFocus={false}
+              style={[styles.expressionInput, { color: colors.muted }]}
+              value={expression}
+            />
+            <AppText
+              adjustsFontSizeToFit
+              minimumFontScale={0.72}
+              numberOfLines={1}
+              weight="extraBold"
+              style={styles.sourceResult}
+            >
+              {sourceValue === null ? '—' : formatConvertedValue(sourceValue, sourceCurrency, locale, true)}
+            </AppText>
+          </View>
         </View>
 
-        {targets.length === 0 && (
-          <Pressable
-            onPress={() => router.push('/currency-picker')}
-            style={[styles.emptyCard, { borderColor: palette.border }]}>
-            <Text style={[styles.emptyTitle, { color: palette.text }]}>Add a destination currency</Text>
-            <Text style={[styles.emptyBody, { color: palette.muted }]}>Compare as many fiat currencies as you need.</Text>
-          </Pressable>
-        )}
-
-        <View style={styles.targets}>
-          {targets.map((target, index) => {
-            const resolved = resolveRate(source, target, cache, customRates);
-            const converted = numericValue !== null && resolved ? numericValue * resolved.rate : null;
+        <View style={styles.targetList}>
+          {targets.map((target) => {
+            const converted = target.value === null
+              ? '—'
+              : formatConvertedValue(target.value, target.code, locale, expanded[target.code]);
+            const meta = target.rate
+              ? `1 ${sourceCurrency} = ${formatConvertedValue(target.rate.rate, target.code, locale, true)}`
+              : 'Rate unavailable';
             return (
-              <Pressable
-                key={target}
-                accessibilityRole="button"
-                accessibilityHint="Promotes this currency to the source"
-                disabled={converted === null}
-                onPress={() => converted !== null && promoteTarget(target, converted)}
-                style={({ pressed }) => [
-                  styles.targetCard,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
-                    opacity: pressed ? 0.75 : 1,
-                  },
-                ]}>
-                <View style={styles.targetMain}>
-                  <View style={styles.targetIdentity}>
-                    <Text style={[styles.targetCode, { color: palette.text }]}>{target}</Text>
-                    <Text style={[styles.targetMeta, { color: palette.muted }]}>
-                      {resolved
-                        ? `${resolved.isCustom ? 'Custom · ' : ''}1 ${source} = ${formatPlainNumber(resolved.rate, locale, 6)} ${target} · ${
-                            new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(resolved.sourceDate))
-                          }`
-                        : 'Rate unavailable'}
-                    </Text>
+              <View key={target.code} style={[styles.targetCard, { backgroundColor: colors.surface }]}>
+                <Pressable
+                  accessibilityLabel={`${target.code} ${target.value ?? 'unavailable'}`}
+                  accessibilityHint="Promote this currency to the source"
+                  accessibilityRole="button"
+                  disabled={target.value === null}
+                  onPress={() => promote(target)}
+                  style={({ pressed }) => [styles.targetIdentity, pressed && styles.pressed]}
+                >
+                  <View style={styles.targetTitleLine}>
+                    <AppText weight="extraBold" style={styles.targetCode}>{target.code}</AppText>
+                    {target.rate?.isCustom ? (
+                      <View style={[styles.customBadge, { borderColor: colors.accent }]}>
+                        <AppText tone="accent" weight="bold" style={styles.customBadgeText}>CUSTOM</AppText>
+                      </View>
+                    ) : null}
                   </View>
-                  <Text
-                    accessibilityLabel={converted === null ? `${target} unavailable` : `${target} ${converted}`}
+                  <AppText tone="muted" numberOfLines={1} style={styles.rateMeta}>
+                    {meta}
+                    {target.rate?.isCustom && target.liveRate
+                      ? ` · live ${formatConvertedValue(target.liveRate.rate, target.code, locale, true)}`
+                      : ''}
+                  </AppText>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`${expanded[target.code] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.code}`}
+                  accessibilityRole="button"
+                  disabled={target.value === null}
+                  onPress={() => setExpanded((current) => ({ ...current, [target.code]: !current[target.code] }))}
+                  style={({ pressed }) => [styles.targetValueArea, pressed && styles.pressed]}
+                >
+                  <AppText
                     adjustsFontSizeToFit
+                    minimumFontScale={0.62}
                     numberOfLines={1}
-                    style={[styles.targetValue, { color: palette.text }]}>
-                    {converted === null ? '—' : formatCurrencyValue(converted, target, locale, expanded[target])}
-                  </Text>
-                </View>
-                <View style={[styles.targetActions, { borderTopColor: palette.border }]}>
-                  <MiniAction
-                    label={expanded[target] ? 'Standard precision' : 'Show up to 6 decimals'}
-                    text=".000"
-                    onPress={() => setExpanded((current) => ({ ...current, [target]: !current[target] }))}
-                  />
-                  <MiniAction
-                    label={`Edit custom rate for ${source} and ${target}`}
-                    text="Rate"
-                    onPress={() => router.push({ pathname: '/custom-rate', params: { base: source, quote: target } })}
-                  />
-                  <MiniAction label="Move up" text="↑" disabled={index === 0} onPress={() => moveTarget(target, -1)} />
-                  <MiniAction label="Move down" text="↓" disabled={index === targets.length - 1} onPress={() => moveTarget(target, 1)} />
-                  <MiniAction label={`Remove ${target}`} text="×" onPress={() => removeTarget(target)} />
-                </View>
-              </Pressable>
+                    tone={target.rate?.isCustom ? 'accent' : 'primary'}
+                    weight="extraBold"
+                    style={styles.targetValue}
+                  >
+                    {converted}
+                  </AppText>
+                  {target.rate?.isCustom && target.liveValue !== null ? (
+                    <AppText tone="muted" numberOfLines={1} style={styles.liveValue}>
+                      Live {formatConvertedValue(target.liveValue, target.code, locale)}
+                    </AppText>
+                  ) : null}
+                </Pressable>
+              </View>
             );
           })}
         </View>
 
-        <Text style={[styles.update, { color: palette.muted }]}>
-          {cache
-            ? `${isCacheFresh(cache) ? 'Updated' : 'Saved rates · stale'} ${formatRelativeUpdate(cache.fetchedAt, locale)}`
-            : 'No saved rates yet'}
-        </Text>
-        <CalculatorKeypad decimalSeparator={decimalSeparator} onKey={handleKey} />
-        <Text style={[styles.disclaimer, { color: palette.muted }]}>Reference only — not for trading.</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/currency-picker')}
+          style={({ pressed }) => [
+            styles.addButton,
+            { borderColor: colors.surfaceSelected },
+            pressed && styles.pressed,
+          ]}
+        >
+          <AppText tone="muted" weight="bold">＋ Add currency</AppText>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setShowKeypad((visible) => !visible)}
+          style={styles.keypadToggle}
+        >
+          <AppText tone="muted" weight="semibold">
+            {showKeypad ? '⌄ Hide keypad' : '⌃ Show keypad'}
+          </AppText>
+        </Pressable>
+
+        {showKeypad ? (
+          <CalculatorKeypad
+            decimalSeparator={decimal}
+            hapticsEnabled={hapticsEnabled}
+            onKey={handleKey}
+          />
+        ) : null}
       </ScrollView>
+      <BottomNavigation active="convert" />
     </Screen>
   );
 }
 
-function MiniAction({
-  label,
-  text,
-  disabled = false,
-  onPress,
-}: {
-  label: string;
-  text: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  const { palette } = useAppTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      disabled={disabled}
-      onPress={(event) => {
-        event.stopPropagation();
-        onPress();
-      }}
-      style={styles.miniAction}>
-      <Text style={[styles.miniText, { color: disabled ? palette.border : palette.muted }]}>{text}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  scroll: { paddingTop: spacing.md, paddingBottom: spacing.xl, gap: spacing.lg },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brand: { fontSize: 20, fontWeight: '900', letterSpacing: 1.5 },
-  subtitle: { fontSize: 13, marginTop: 2 },
-  iconButton: { width: minTouch, height: minTouch, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  iconText: { fontSize: 20 },
-  banner: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radii.md, padding: spacing.md },
-  bannerText: { fontSize: 14, lineHeight: 19 },
-  sourceCard: { borderRadius: radii.lg, padding: spacing.xl, minHeight: 150, justifyContent: 'space-between' },
-  sourceLabel: { fontSize: 13, fontWeight: '800', letterSpacing: 1.5, opacity: 0.9 },
-  expression: { fontSize: 38, lineHeight: 48, fontWeight: '700', textAlign: 'right', marginTop: spacing.md },
-  expressionStatus: { fontSize: 14, textAlign: 'right', opacity: 0.82 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { fontSize: 20, fontWeight: '800' },
-  addButton: { minHeight: minTouch, borderWidth: 1, borderRadius: radii.pill, paddingHorizontal: spacing.lg, justifyContent: 'center' },
-  addButtonText: { fontSize: 15, fontWeight: '700' },
-  emptyCard: { borderWidth: 1, borderStyle: 'dashed', borderRadius: radii.lg, padding: spacing.xl },
-  emptyTitle: { fontSize: 17, fontWeight: '700' },
-  emptyBody: { fontSize: 14, marginTop: spacing.xs },
-  targets: { gap: spacing.md },
-  targetCard: { borderRadius: radii.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  targetMain: { minHeight: 86, padding: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  targetIdentity: { flex: 1 },
-  targetCode: { fontSize: 18, fontWeight: '800' },
-  targetMeta: { fontSize: 12, marginTop: spacing.xs },
-  targetValue: { flex: 1.35, fontSize: 23, fontWeight: '700', textAlign: 'right' },
-  targetActions: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'flex-end' },
-  miniAction: { minWidth: minTouch, minHeight: minTouch, paddingHorizontal: spacing.sm, alignItems: 'center', justifyContent: 'center' },
-  miniText: { fontSize: 13, fontWeight: '700' },
-  update: { fontSize: 12, textAlign: 'center', marginTop: -spacing.sm },
-  disclaimer: { fontSize: 12, textAlign: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scrollContent: { paddingHorizontal: 20, paddingTop: spacing.xl, paddingBottom: spacing.xl },
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  displayTitle: { fontSize: typeScale.display, lineHeight: 43, letterSpacing: -1 },
+  status: { flexShrink: 1, fontSize: typeScale.label, textAlign: 'right' },
+  notice: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.md },
+  noticeText: { fontSize: typeScale.caption, lineHeight: 18 },
+  sourceCard: {
+    minHeight: 104,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginBottom: spacing.md,
+  },
+  sourceCurrency: {
+    width: 88,
+    minHeight: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.sm,
+  },
+  sourceCurrencyText: { fontSize: 16 },
+  expressionColumn: { flex: 1, alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: spacing.md },
+  expressionInput: {
+    width: '100%',
+    padding: 0,
+    fontFamily: fontFamilies.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'right',
+  },
+  sourceResult: { width: '100%', fontSize: 31, lineHeight: 40, textAlign: 'right', letterSpacing: -0.7 },
+  targetList: { gap: spacing.sm },
+  targetCard: {
+    minHeight: 106,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  targetIdentity: { flex: 1, minHeight: 64, justifyContent: 'center', paddingRight: spacing.sm },
+  targetTitleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  targetCode: { fontSize: 20, lineHeight: 27 },
+  customBadge: { borderWidth: 1.5, borderRadius: radii.sm, paddingHorizontal: 8, paddingVertical: 3 },
+  customBadgeText: { fontSize: 11 },
+  rateMeta: { fontSize: 13, lineHeight: 19, marginTop: 3 },
+  targetValueArea: { width: '45%', minHeight: 60, alignItems: 'flex-end', justifyContent: 'center' },
+  targetValue: { width: '100%', fontSize: 27, lineHeight: 35, textAlign: 'right', letterSpacing: -0.4 },
+  liveValue: { fontSize: 12, lineHeight: 17, textAlign: 'right' },
+  addButton: {
+    minHeight: 52,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  keypadToggle: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+  },
+  pressed: { opacity: 0.65 },
 });
