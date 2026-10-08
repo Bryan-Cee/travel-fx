@@ -126,6 +126,17 @@ describe('converter workflow', () => {
     await fireEvent.press(screen.getByLabelText('Equals'));
     expect(screen.getByLabelText('USD amount input').props.accessibilityValue.text).toBe('0.33');
     expect(screen.getByLabelText('IDR amount input').props.accessibilityValue.text).toBe('5,333');
+    expect(screen.queryByLabelText('Calculator keypad')).toBeNull();
+  });
+
+  it('hides the calculator after equals even when the expression is incomplete', async () => {
+    const screen = await render(<ConverterScreen />);
+
+    await fireEvent.press(screen.getByLabelText('Divide'));
+    await fireEvent.press(screen.getByLabelText('Equals'));
+
+    expect(screen.queryByLabelText('Calculator keypad')).toBeNull();
+    expect(screen.getByLabelText('USD amount input').props.accessibilityValue.text).toBe('1.00÷');
   });
 
   it('opens the add-currency flow', async () => {

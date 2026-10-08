@@ -58,7 +58,7 @@ Every saved currency is a compact single-line amount input. Tapping a row activa
 
 ### Calculator keypad
 
-A compact four-column grid uses surface keys, raised operator keys, and one filled mint equals key. It remains fixed above the bottom navigation while conversion cards scroll behind it, with a permanently available aligned chevron control to hide or reveal it. Parentheses remain available despite the reference artifact omitting them because precedence and grouped expressions are product requirements.
+A compact four-column grid uses surface keys, raised operator keys, and one filled mint equals key. It remains fixed above the bottom navigation while conversion cards scroll behind it, with a permanently available aligned chevron control to hide or reveal it. Pressing equals collapses the keypad after evaluation so the converted values return to view; incomplete expressions remain intact and can be resumed by reopening the keypad. Parentheses remain available despite the reference artifact omitting them because precedence and grouped expressions are product requirements.
 
 ### Rates management
 

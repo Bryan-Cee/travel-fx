@@ -154,6 +154,7 @@ export default function ConverterScreen() {
     if (key === 'clear') return updateExpression('');
     if (key === 'backspace') return updateExpression(expression.slice(0, -1));
     if (key === 'equals') {
+      setShowKeypad(false);
       if (result.status === 'valid') {
         setExactActiveValue(result.value);
         setExpressionState({
