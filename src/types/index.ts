@@ -26,14 +26,17 @@ export type CustomRate = {
 };
 
 export type ThemePreference = 'system' | 'light' | 'dark';
+export type NumberFormatPreference = 'system' | 'comma-period' | 'period-comma' | 'space-comma';
 
 export type PersistedState = {
-  version: 2;
+  version: 3;
   sourceCurrency: string;
+  defaultCurrency: string;
   targetCurrencies: string[];
   onboardingComplete: boolean;
   hapticsEnabled: boolean;
   themePreference: ThemePreference;
+  numberFormat: NumberFormatPreference;
   customRates: CustomRate[];
   rateCache: RateCache | null;
 };

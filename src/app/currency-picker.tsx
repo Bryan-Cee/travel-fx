@@ -14,7 +14,9 @@ export default function CurrencyPickerScreen() {
   const targets = useAppStore((state) => state.targetCurrencies);
   const addTarget = useAppStore((state) => state.addTarget);
   const setExpressionSource = useAppStore((state) => state.setExpressionSource);
+  const setDefaultCurrency = useAppStore((state) => state.setDefaultCurrency);
   const selectingSource = mode === 'source';
+  const selectingDefault = mode === 'default';
 
   return (
     <Screen>
@@ -27,15 +29,17 @@ export default function CurrencyPickerScreen() {
           <AppText weight="semibold">Cancel</AppText>
         </Pressable>
         <AppText weight="extraBold" style={styles.title}>
-          {selectingSource ? 'Source currency' : 'Add currency'}
+          {selectingDefault ? 'Default currency' : selectingSource ? 'Source currency' : 'Add currency'}
         </AppText>
         <View style={styles.cancel} />
       </View>
       <CurrencyList
         currencies={currencies}
-        excluded={selectingSource ? [] : [source, ...targets]}
+        excluded={selectingSource || selectingDefault ? [] : [source, ...targets]}
         onSelect={(currency) => {
-          if (selectingSource) {
+          if (selectingDefault) {
+            setDefaultCurrency(currency.code);
+          } else if (selectingSource) {
             setExpressionSource(
               currency.code,
               [source, ...targets].filter((code) => code !== currency.code),

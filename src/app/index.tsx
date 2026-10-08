@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Redirect, router } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -24,19 +24,30 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { evaluateExpression } from '@/services/expression';
 import {
   formatConvertedValue,
-  formatPlainNumber,
+  formatEditableValue,
   formatRelativeUpdate,
   getDecimalSeparator,
+  getNumberFormatLocale,
 } from '@/services/format';
 import { resolveRate } from '@/services/rates';
 import { useAppStore } from '@/store/use-app-store';
+import { CustomRate } from '@/types';
 
-type TargetResult = {
+type CurrencyInputRow = {
+  active: boolean;
   code: string;
+  customRate: CustomRate | null;
+  factor: number | null;
   key: string;
   kind: 'provider' | 'custom';
   value: number | null;
 };
+
+function amountFontSize(value: string): number {
+  if (value.length > 14) return 17;
+  if (value.length > 10) return 21;
+  return 27;
+}
 
 export default function ConverterScreen() {
   const {
@@ -45,47 +56,84 @@ export default function ConverterScreen() {
     sourceCurrency,
     targetCurrencies,
     hapticsEnabled,
+    numberFormat,
     customRates,
     rateCache,
     refreshing,
     error,
     storageNotice,
-    setExpressionSource,
     removeTarget,
     deleteCustomRate,
     refreshRates,
   } = useAppStore();
   const { colors, locale } = useAppTheme();
-  const decimal = getDecimalSeparator(locale);
-  const [expression, setExpression] = useState('1');
+  const formatLocale = getNumberFormatLocale(locale, numberFormat);
+  const decimal = getDecimalSeparator(formatLocale);
+  const [expressionState, setExpressionState] = useState(() => ({
+    decimal,
+    text: formatEditableValue(1, formatLocale),
+  }));
+  let expression = expressionState.text;
+  if (expressionState.decimal !== decimal) {
+    expression = expressionState.text.split(expressionState.decimal).join(decimal);
+    setExpressionState({ decimal, text: expression });
+  }
+  const [exactActiveValue, setExactActiveValue] = useState<number | null>(null);
+  const [activeInputKey, setActiveInputKey] = useState(`${sourceCurrency}-provider`);
   const [showKeypad, setShowKeypad] = useState(true);
   const [keypadOverlayHeight, setKeypadOverlayHeight] = useState(0);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const currencyOrder = [...new Set([sourceCurrency, ...targetCurrencies])];
   const swipeableRefs = useRef<Record<string, SwipeableMethods | null>>({});
   const openSwipeable = useRef<SwipeableMethods | null>(null);
-  const result = useMemo(() => evaluateExpression(expression, decimal), [expression, decimal]);
-  const sourceValue = result.status === 'valid' ? result.value : null;
+  const result = evaluateExpression(expression, decimal);
 
-  const targets = useMemo<TargetResult[]>(() => targetCurrencies.flatMap((code) => {
-    const providerRate = resolveRate(sourceCurrency, code, rateCache, []);
-    const providerTarget: TargetResult = {
+  const descriptors = currencyOrder.flatMap<Omit<CurrencyInputRow, 'active' | 'value'>>((code) => {
+    const providerRate = resolveRate('USD', code, rateCache, []);
+    const provider = {
       code,
+      customRate: null,
+      factor: providerRate?.rate ?? null,
       key: `${code}-provider`,
-      kind: 'provider',
-      value: providerRate && sourceValue !== null ? sourceValue * providerRate.rate : null,
+      kind: 'provider' as const,
     };
-    const customRate = resolveRate(sourceCurrency, code, rateCache, customRates);
-    if (!customRate?.isCustom) return [providerTarget];
-    return [
-      providerTarget,
-      {
-        code,
-        key: `${code}-custom`,
-        kind: 'custom',
-        value: sourceValue !== null ? sourceValue * customRate.rate : null,
-      },
-    ];
-  }), [customRates, rateCache, sourceCurrency, sourceValue, targetCurrencies]);
+    const custom = customRates
+      .filter((rate) => rate.enabled && rate.quote === code)
+      .map((rate) => {
+        const baseRate = resolveRate('USD', rate.base, rateCache, []);
+        return {
+          code,
+          customRate: rate,
+          factor: baseRate ? baseRate.rate * rate.rate : null,
+          key: `${code}-custom-${rate.base}`,
+          kind: 'custom' as const,
+        };
+      });
+    return [provider, ...custom];
+  });
+  const activeDescriptor = descriptors.find((row) => row.key === activeInputKey)
+    ?? descriptors.find((row) => row.key === `${sourceCurrency}-provider`)
+    ?? descriptors[0];
+  const activeValue = exactActiveValue ?? (result.status === 'valid' ? result.value : null);
+  const valueInUsd = activeValue !== null && activeDescriptor?.factor
+    ? activeValue / activeDescriptor.factor
+    : null;
+  const rows: CurrencyInputRow[] = descriptors.map((row) => ({
+    ...row,
+    active: row.key === activeDescriptor?.key,
+    value: valueInUsd !== null && row.factor !== null ? valueInUsd * row.factor : null,
+  }));
+
+  if (rows.length === 0) {
+    rows.push({
+      active: true,
+      code: sourceCurrency,
+      customRate: null,
+      factor: null,
+      key: `${sourceCurrency}-provider`,
+      kind: 'provider',
+      value: null,
+    });
+  }
 
   if (!initialized) {
     return (
@@ -99,7 +147,8 @@ export default function ConverterScreen() {
   if (!onboardingComplete) return <Redirect href="/onboarding" />;
 
   function updateExpression(next: string) {
-    setExpression(next.slice(0, 80));
+    setExactActiveValue(null);
+    setExpressionState({ decimal, text: next.slice(0, 80) });
   }
 
   function handleKey(key: string) {
@@ -107,7 +156,11 @@ export default function ConverterScreen() {
     if (key === 'backspace') return updateExpression(expression.slice(0, -1));
     if (key === 'equals') {
       if (result.status === 'valid') {
-        updateExpression(formatPlainNumber(result.value, locale, 12));
+        setExactActiveValue(result.value);
+        setExpressionState({
+          decimal,
+          text: formatEditableValue(result.value, formatLocale),
+        });
         if (hapticsEnabled) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else if (hapticsEnabled) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -117,11 +170,15 @@ export default function ConverterScreen() {
     updateExpression(expression + key);
   }
 
-  function promote(target: TargetResult) {
-    if (target.value === null) return;
-    const nextTargets = [sourceCurrency, ...targetCurrencies.filter((code) => code !== target.code)];
-    setExpressionSource(target.code, nextTargets);
-    updateExpression(formatPlainNumber(target.value, locale, 12));
+  function activateInput(row: CurrencyInputRow) {
+    setShowKeypad(true);
+    if (row.active || row.factor === null) return;
+    setExactActiveValue(row.value);
+    setExpressionState({
+      decimal,
+      text: row.value === null ? '' : formatEditableValue(row.value, formatLocale),
+    });
+    setActiveInputKey(row.key);
     if (hapticsEnabled) void Haptics.selectionAsync();
   }
 
@@ -166,69 +223,28 @@ export default function ConverterScreen() {
           </View>
         ) : null}
 
-        <View style={[styles.sourceCard, { backgroundColor: colors.surface }]}>
-          <Pressable
-            accessibilityLabel={`Change source currency, currently ${sourceCurrency}`}
-            accessibilityRole="button"
-            onPress={() => router.push({ pathname: '/currency-picker', params: { mode: 'source' } })}
-            style={({ pressed }) => [
-              styles.sourceCurrency,
-              { backgroundColor: colors.backgroundDeep },
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.sourceCurrencyContent}>
-              <AppText weight="bold" style={styles.sourceCurrencyText}>{sourceCurrency}</AppText>
-              <Chevron color={colors.text} direction="down" />
-            </View>
-          </Pressable>
-          <View style={styles.expressionColumn}>
-            <TextInput
-              accessibilityLabel={`${sourceCurrency} expression ${expression}`}
-              accessibilityHint="Enter a calculator expression"
-              allowFontScaling
-              autoCorrect={false}
-              cursorColor={colors.accent}
-              onChangeText={updateExpression}
-              onFocus={() => setShowKeypad(true)}
-              onPressIn={() => setShowKeypad(true)}
-              placeholder="0"
-              placeholderTextColor={colors.muted}
-              selectionColor={colors.accent}
-              showSoftInputOnFocus={false}
-              style={[styles.expressionInput, { color: colors.muted }]}
-              value={expression}
-            />
-            <AppText
-              adjustsFontSizeToFit
-              minimumFontScale={0.72}
-              numberOfLines={1}
-              weight="extraBold"
-              style={styles.sourceResult}
-            >
-              {sourceValue === null ? '—' : formatConvertedValue(sourceValue, sourceCurrency, locale, true)}
-            </AppText>
-          </View>
-        </View>
-
-        <View style={styles.targetList}>
-          {targets.map((target) => {
-            const converted = target.value === null
+        <View style={styles.currencyList}>
+          {rows.map((row) => {
+            const displayedValue = row.active
+              ? expression
+              : row.value === null
               ? '—'
-              : formatConvertedValue(target.value, target.code, locale, expanded[target.key]);
+              : formatConvertedValue(row.value, row.code, formatLocale);
+            const canManage = !row.active && (row.kind === 'custom' || row.code !== sourceCurrency);
             return (
               <Swipeable
                 childrenContainerStyle={{ backgroundColor: colors.background }}
                 containerStyle={styles.swipeable}
                 dragOffsetFromRightEdge={20}
+                enabled={canManage}
                 friction={2}
-                key={target.key}
+                key={row.key}
                 onSwipeableClose={() => {
-                  const current = swipeableRefs.current[target.key];
+                  const current = swipeableRefs.current[row.key];
                   if (openSwipeable.current === current) openSwipeable.current = null;
                 }}
                 onSwipeableWillOpen={() => {
-                  const current = swipeableRefs.current[target.key];
+                  const current = swipeableRefs.current[row.key];
                   if (openSwipeable.current && openSwipeable.current !== current) {
                     openSwipeable.current.close();
                   }
@@ -236,18 +252,20 @@ export default function ConverterScreen() {
                 }}
                 overshootRight={false}
                 ref={(instance) => {
-                  swipeableRefs.current[target.key] = instance;
+                  swipeableRefs.current[row.key] = instance;
                 }}
-                renderRightActions={(_progress, _translation, methods) => (
+                renderRightActions={canManage ? (_progress, _translation, methods) => (
                   <View style={styles.swipeActions}>
                     <Pressable
-                      accessibilityLabel={`Edit ${target.kind === 'custom' ? 'custom ' : ''}${target.code} conversion rate`}
+                      accessibilityLabel={`Edit ${row.kind === 'custom' ? 'custom ' : ''}${row.code} conversion rate`}
                       accessibilityRole="button"
                       onPress={() => {
                         methods.close();
                         router.push({
                           pathname: '/custom-rate',
-                          params: { base: sourceCurrency, quote: target.code },
+                          params: row.customRate
+                            ? { base: row.customRate.base, quote: row.customRate.quote }
+                            : { base: sourceCurrency, quote: row.code },
                         });
                       }}
                       style={({ pressed }) => [
@@ -260,20 +278,18 @@ export default function ConverterScreen() {
                       <AppText weight="bold" style={styles.swipeActionText}>Edit rate</AppText>
                     </Pressable>
                     <Pressable
-                      accessibilityLabel={target.kind === 'custom'
-                        ? `Delete custom ${target.code} rate`
-                        : `Delete ${target.code} conversion`}
+                      accessibilityLabel={row.kind === 'custom'
+                        ? `Delete custom ${row.code} rate`
+                        : `Delete ${row.code} conversion`}
                       accessibilityRole="button"
                       onPress={() => {
                         methods.close();
-                        if (target.kind === 'custom') {
-                          const custom = customRates.find((item) => item.enabled && (
-                            (item.base === sourceCurrency && item.quote === target.code) ||
-                            (item.base === target.code && item.quote === sourceCurrency)
-                          ));
-                          if (custom) deleteCustomRate(custom.base, custom.quote);
+                        openSwipeable.current = null;
+                        swipeableRefs.current[row.key] = null;
+                        if (row.customRate) {
+                          deleteCustomRate(row.customRate.base, row.customRate.quote);
                         } else {
-                          removeTarget(target.code);
+                          removeTarget(row.code);
                         }
                         if (hapticsEnabled) void Haptics.selectionAsync();
                       }}
@@ -288,50 +304,63 @@ export default function ConverterScreen() {
                         weight="bold"
                         style={[styles.swipeActionText, { color: palette.white }]}
                       >
-                        {target.kind === 'custom' ? 'Delete rate' : 'Delete'}
+                        {row.kind === 'custom' ? 'Delete rate' : 'Delete'}
                       </AppText>
                     </Pressable>
                   </View>
-                )}
+                ) : undefined}
                 rightThreshold={54}
-                testID={`swipeable-${target.key}`}
+                testID={`swipeable-${row.key}`}
               >
-                <View style={[styles.targetCard, { backgroundColor: colors.surface }]}>
-                  <Pressable
-                    accessibilityLabel={`${target.kind === 'custom' ? 'Custom ' : ''}${target.code} ${target.value ?? 'unavailable'}`}
-                    accessibilityHint="Tap to promote. Swipe left to edit its rate or remove it."
-                    accessibilityRole="button"
-                    disabled={target.value === null}
-                    onPress={() => promote(target)}
-                    style={({ pressed }) => [styles.targetIdentity, pressed && styles.pressed]}
-                  >
-                    <View style={styles.targetTitleLine}>
-                      <AppText weight="extraBold" style={styles.targetCode}>{target.code}</AppText>
-                      {target.kind === 'custom' ? (
+                <View
+                  style={[
+                    styles.currencyCard,
+                    {
+                      backgroundColor: row.active ? colors.surfaceRaised : colors.surface,
+                      borderColor: row.active ? colors.accent : 'transparent',
+                    },
+                  ]}
+                >
+                  <View style={styles.currencyIdentity}>
+                    <View style={styles.currencyTitleLine}>
+                      <AppText weight="extraBold" style={styles.currencyCode}>{row.code}</AppText>
+                      {row.kind === 'custom' ? (
                         <View style={[styles.customBadge, { borderColor: colors.accent }]}>
                           <AppText tone="accent" weight="bold" style={styles.customBadgeText}>CUSTOM</AppText>
                         </View>
                       ) : null}
                     </View>
-                  </Pressable>
-                  <Pressable
-                    accessibilityLabel={`${expanded[target.key] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.kind === 'custom' ? 'custom ' : ''}${target.code}`}
-                    accessibilityRole="button"
-                    disabled={target.value === null}
-                    onPress={() => setExpanded((current) => ({ ...current, [target.key]: !current[target.key] }))}
-                    style={({ pressed }) => [styles.targetValueArea, pressed && styles.pressed]}
-                  >
-                    <AppText
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.62}
-                      numberOfLines={1}
-                      tone={target.kind === 'custom' ? 'accent' : 'primary'}
-                      weight="extraBold"
-                      style={styles.targetValue}
-                    >
-                      {converted}
-                    </AppText>
-                  </Pressable>
+                    {row.active ? (
+                      <AppText tone="accent" weight="bold" style={styles.editingLabel}>EDITING</AppText>
+                    ) : null}
+                  </View>
+                  <TextInput
+                    accessibilityLabel={`${row.kind === 'custom' ? 'Custom ' : ''}${row.code} amount input`}
+                    accessibilityHint={row.active
+                      ? 'Enter a calculator expression'
+                      : row.factor === null
+                        ? 'A conversion rate is unavailable'
+                        : 'Tap to edit this currency amount'}
+                    allowFontScaling
+                    autoCorrect={false}
+                    cursorColor={colors.accent}
+                    editable={row.active || row.factor !== null}
+                    onChangeText={row.active ? updateExpression : undefined}
+                    onFocus={() => activateInput(row)}
+                    onPressIn={() => setShowKeypad(true)}
+                    placeholder="—"
+                    placeholderTextColor={colors.muted}
+                    selectionColor={colors.accent}
+                    showSoftInputOnFocus={false}
+                    style={[
+                      styles.amountInput,
+                      {
+                        color: row.kind === 'custom' ? colors.accent : colors.text,
+                        fontSize: amountFontSize(displayedValue),
+                      },
+                    ]}
+                    value={displayedValue}
+                  />
                 </View>
               </Swipeable>
             );
@@ -412,38 +441,7 @@ const styles = StyleSheet.create({
   status: { flexShrink: 1, fontSize: typeScale.label, textAlign: 'right' },
   notice: { borderWidth: 1, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.md },
   noticeText: { fontSize: typeScale.caption, lineHeight: 18 },
-  sourceCard: {
-    minHeight: 92,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    marginBottom: spacing.md,
-  },
-  sourceCurrency: {
-    width: 88,
-    minHeight: 76,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.sm,
-  },
-  sourceCurrencyContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sourceCurrencyText: { fontSize: 16 },
-  expressionColumn: { flex: 1, alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: spacing.md },
-  expressionInput: {
-    width: '100%',
-    padding: 0,
-    fontFamily: fontFamilies.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'right',
-  },
-  sourceResult: { width: '100%', fontSize: 31, lineHeight: 40, textAlign: 'right', letterSpacing: -0.7 },
-  targetList: { gap: spacing.sm },
+  currencyList: { gap: spacing.sm },
   swipeable: { borderRadius: radii.md, overflow: 'hidden' },
   swipeActions: { width: 176, flexDirection: 'row' },
   swipeAction: {
@@ -454,21 +452,31 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   swipeActionText: { fontSize: 12, textAlign: 'center' },
-  targetCard: {
+  currencyCard: {
     minHeight: 64,
+    borderWidth: 1.5,
     borderRadius: radii.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  targetIdentity: { flex: 1, minHeight: 48, justifyContent: 'center', paddingRight: spacing.sm },
-  targetTitleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  targetCode: { fontSize: 20, lineHeight: 27 },
+  currencyIdentity: { flex: 1, minHeight: 48, justifyContent: 'center', paddingRight: spacing.sm },
+  currencyTitleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  currencyCode: { fontSize: 20, lineHeight: 27 },
+  editingLabel: { fontSize: 10, letterSpacing: 0.8, marginTop: 1 },
   customBadge: { borderWidth: 1.5, borderRadius: radii.sm, paddingHorizontal: 8, paddingVertical: 3 },
   customBadgeText: { fontSize: 11 },
-  targetValueArea: { width: '45%', minHeight: 48, alignItems: 'flex-end', justifyContent: 'center' },
-  targetValue: { width: '100%', fontSize: 27, lineHeight: 35, textAlign: 'right', letterSpacing: -0.4 },
+  amountInput: {
+    width: '52%',
+    minHeight: 48,
+    padding: 0,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 27,
+    lineHeight: 35,
+    textAlign: 'right',
+    letterSpacing: -0.4,
+  },
   addButton: {
     minHeight: 52,
     borderWidth: 1.5,

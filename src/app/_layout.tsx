@@ -41,6 +41,7 @@ export default function RootLayout() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
         <Stack.Screen name="currency-picker" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="number-format" options={{ presentation: 'modal' }} />
         <Stack.Screen name="custom-rate" options={{ presentation: 'modal' }} />
       </Stack>
     </GestureHandlerRootView>

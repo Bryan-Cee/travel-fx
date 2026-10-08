@@ -4,7 +4,13 @@ import { create } from 'zustand';
 import { fetchCurrencies, fetchLatestRates } from '@/services/api';
 import { defaultPersistedState, loadPersistedState, resetPersistedState, savePersistedState } from '@/services/persistence';
 import { isCacheFresh, upsertCustomRate } from '@/services/rates';
-import { Currency, CustomRate, PersistedState, ThemePreference } from '@/types';
+import {
+  Currency,
+  CustomRate,
+  NumberFormatPreference,
+  PersistedState,
+  ThemePreference,
+} from '@/types';
 
 type AppStore = PersistedState & {
   currencies: Currency[];
@@ -21,6 +27,8 @@ type AppStore = PersistedState & {
   moveTarget: (code: string, direction: -1 | 1) => void;
   setHaptics: (enabled: boolean) => void;
   setThemePreference: (theme: ThemePreference) => void;
+  setDefaultCurrency: (currency: string) => void;
+  setNumberFormat: (format: NumberFormatPreference) => void;
   saveCustomRate: (customRate: CustomRate) => void;
   toggleCustomRate: (base: string, quote: string, enabled: boolean) => void;
   deleteCustomRate: (base: string, quote: string) => void;
@@ -32,12 +40,14 @@ function localeCurrency(): string {
 }
 function persistedSlice(state: AppStore): PersistedState {
   return {
-    version: 2,
+    version: 3,
     sourceCurrency: state.sourceCurrency,
+    defaultCurrency: state.defaultCurrency,
     targetCurrencies: state.targetCurrencies,
     onboardingComplete: state.onboardingComplete,
     hapticsEnabled: state.hapticsEnabled,
     themePreference: state.themePreference,
+    numberFormat: state.numberFormat,
     customRates: state.customRates,
     rateCache: state.rateCache,
   };
@@ -67,11 +77,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       loaded = { state: defaultPersistedState, issue: error instanceof Error ? `Could not read saved data: ${error.message}` : 'Could not read saved data.' };
     }
     const detected = localeCurrency();
-    const sourceCurrency = loaded.state.onboardingComplete ? loaded.state.sourceCurrency : detected;
-    set({ ...loaded.state, sourceCurrency, storageNotice: loaded.issue });
+    const defaultCurrency = loaded.state.onboardingComplete ? loaded.state.defaultCurrency : detected;
+    const sourceCurrency = loaded.state.onboardingComplete ? defaultCurrency : detected;
+    set({ ...loaded.state, defaultCurrency, sourceCurrency, storageNotice: loaded.issue });
     if (loaded.issue) {
       try {
-        await savePersistedState({ ...loaded.state, sourceCurrency });
+        await savePersistedState({ ...loaded.state, defaultCurrency, sourceCurrency });
       } catch (error) {
         set({
           error: error instanceof Error
@@ -82,8 +93,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     try {
       const currencies = await fetchCurrencies();
-      const validSource = currencies.some((currency) => currency.code === sourceCurrency) ? sourceCurrency : 'USD';
-      set({ currencies, sourceCurrency: validSource, initialized: true });
+      const validDefault = currencies.some((currency) => currency.code === defaultCurrency)
+        ? defaultCurrency
+        : 'USD';
+      set({
+        currencies,
+        defaultCurrency: validDefault,
+        sourceCurrency: validDefault,
+        targetCurrencies: get().targetCurrencies.filter((code) => code !== validDefault),
+        initialized: true,
+      });
     } catch (error) {
       const fallbackCodes = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF'];
       set({
@@ -142,6 +161,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ themePreference });
     queuePersist(get());
   },
+  setDefaultCurrency: (defaultCurrency) => {
+    const currencies = [get().sourceCurrency, ...get().targetCurrencies];
+    set({
+      defaultCurrency,
+      sourceCurrency: defaultCurrency,
+      targetCurrencies: [...new Set(currencies)].filter((code) => code !== defaultCurrency),
+    });
+    queuePersist(get());
+  },
+  setNumberFormat: (numberFormat) => {
+    set({ numberFormat });
+    queuePersist(get());
+  },
   saveCustomRate: (customRate) => {
     set({ customRates: upsertCustomRate(get().customRates, customRate) });
     queuePersist(get());
@@ -159,6 +191,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       ...defaultPersistedState,
       sourceCurrency: localeCurrency(),
+      defaultCurrency: localeCurrency(),
       initialized: true,
       currencies: get().currencies,
       storageNotice: 'Local app data was reset.',

@@ -52,13 +52,9 @@ The type scale is centralized in `src/constants/theme.ts`. Top-level titles use 
 
 ## Components
 
-### Source card
+### Currency inputs
 
-A recessed currency selector anchors the left side. The editable expression is right aligned above the evaluated source amount. Invalid or incomplete expressions stay visible while the result becomes an em dash.
-
-### Target card
-
-Target cards are compact single-line rows: currency identity and an optional Custom badge occupy the left, while the converted value occupies the right. An active custom override adds a second, badged row directly after the original provider conversion so both values remain visible. Detailed rate context lives in the Rates screen rather than increasing converter-row height. Tapping identity promotes the currency to source; tapping the value toggles expanded precision. Swiping left reveals pair-specific Edit rate and Delete actions; deleting a custom row removes only its override, while deleting the provider row removes the target. Starting a vertical list scroll closes an open action tray.
+Every saved currency is a compact single-line amount input. Tapping a row activates it in place, opens the calculator, and makes its expression the source for all other values; the row does not jump or change list position. The active row uses an accent border and explicit Editing label. Currency identity and an optional Custom badge occupy the left, while the editable or converted amount occupies the right. An active custom override adds a second, badged row directly after the original provider conversion so both values remain visible. Detailed rate context lives in the Rates screen rather than increasing converter-row height. Swiping left reveals pair-specific Edit rate and Delete actions; deleting a custom row removes only its override, while deleting the provider row removes the currency. Starting a vertical list scroll closes an open action tray.
 
 ### Calculator keypad
 
@@ -70,7 +66,7 @@ Each pair card shows resolved and live rate context, a prominent Set custom or R
 
 ### Settings
 
-Use grouped tonal lists and native switches. Only real product settings are shown. Appearance is a three-option segmented control; custom rates remain manageable here through enable, edit, and delete actions.
+Use grouped tonal lists and native switches. Only real product settings are shown. Default currency and number-format rows open focused modal pickers; appearance remains a three-option segmented control; custom rates remain manageable here through enable, edit, and delete actions.
 
 ### Bottom navigation
 
@@ -92,5 +88,5 @@ Currency selection and custom-rate editing use self-contained modal routes with 
 - Use semantic button, tab, radio-group, and switch roles.
 - Announce recoverable storage and rate errors.
 - Never encode Custom status or errors by color alone.
-- Keep labels explicit for source selection, target promotion, precision expansion, rate management, and keypad operations.
+- Keep labels explicit for editable currency amounts, active-source changes, rate management, and keypad operations.
 - Preserve readable contrast in both color schemes and retain locale-aware numeric formatting.

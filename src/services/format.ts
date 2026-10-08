@@ -1,3 +1,15 @@
+import { NumberFormatPreference } from '@/types';
+
+export function getNumberFormatLocale(
+  locale: string,
+  preference: NumberFormatPreference,
+): string {
+  if (preference === 'comma-period') return 'en-US';
+  if (preference === 'period-comma') return 'de-DE';
+  if (preference === 'space-comma') return 'fr-FR';
+  return locale;
+}
+
 export function getDecimalSeparator(locale: string): string {
   return new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === 'decimal')?.value ?? '.';
 }
@@ -38,6 +50,14 @@ export function formatConvertedValue(
 
 export function formatPlainNumber(value: number, locale: string, maximumFractionDigits = 12): string {
   return new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits }).format(value);
+}
+
+export function formatEditableValue(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    useGrouping: false,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 export function formatRelativeUpdate(iso: string, locale: string, now = Date.now()): string {

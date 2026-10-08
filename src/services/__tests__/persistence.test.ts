@@ -11,19 +11,42 @@ describe('persistence schema', () => {
       rateCache: null,
     });
     expect(result.state).toMatchObject({
-      version: 2,
+      version: 3,
       sourceCurrency: 'USD',
+      defaultCurrency: 'USD',
       targetCurrencies: ['EUR'],
       themePreference: 'system',
+      numberFormat: 'system',
       customRates: [],
     });
     expect(result.issue).toMatch(/upgraded/);
   });
 
   it('resets invalid data and surfaces a recoverable notice', () => {
-    const result = migrateAndValidate({ version: 2, sourceCurrency: 'not-a-code' });
+    const result = migrateAndValidate({ version: 3, sourceCurrency: 'not-a-code' });
     expect(result.state).toEqual(defaultPersistedState);
     expect(result.issue).toMatch(/reset/);
+  });
+
+  it('migrates version two preferences to explicit defaults', () => {
+    const result = migrateAndValidate({
+      version: 2,
+      sourceCurrency: 'KES',
+      targetCurrencies: ['USD'],
+      onboardingComplete: true,
+      hapticsEnabled: true,
+      themePreference: 'dark',
+      customRates: [],
+      rateCache: null,
+    });
+
+    expect(result.state).toMatchObject({
+      version: 3,
+      sourceCurrency: 'KES',
+      defaultCurrency: 'KES',
+      numberFormat: 'system',
+    });
+    expect(result.issue).toMatch(/upgraded/);
   });
 
   it('rejects invalid custom rates rather than accepting partial data', () => {
