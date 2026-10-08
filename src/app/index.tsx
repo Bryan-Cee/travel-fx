@@ -34,8 +34,6 @@ import { useAppStore } from '@/store/use-app-store';
 type TargetResult = {
   code: string;
   value: number | null;
-  liveValue: number | null;
-  liveRate: ReturnType<typeof resolveRate>;
   rate: ReturnType<typeof resolveRate>;
 };
 
@@ -68,12 +66,9 @@ export default function ConverterScreen() {
 
   const targets = useMemo<TargetResult[]>(() => targetCurrencies.map((code) => {
     const rate = resolveRate(sourceCurrency, code, rateCache, customRates);
-    const liveRate = resolveRate(sourceCurrency, code, rateCache, []);
     return {
       code,
       value: rate && sourceValue !== null ? sourceValue * rate.rate : null,
-      liveValue: liveRate && sourceValue !== null ? sourceValue * liveRate.rate : null,
-      liveRate,
       rate,
     };
   }), [customRates, rateCache, sourceCurrency, sourceValue, targetCurrencies]);
@@ -206,9 +201,6 @@ export default function ConverterScreen() {
             const converted = target.value === null
               ? '—'
               : formatConvertedValue(target.value, target.code, locale, expanded[target.code]);
-            const meta = target.rate
-              ? `1 ${sourceCurrency} = ${formatConvertedValue(target.rate.rate, target.code, locale, true)}`
-              : 'Rate unavailable';
             return (
               <Swipeable
                 childrenContainerStyle={{ backgroundColor: colors.background }}
@@ -296,12 +288,6 @@ export default function ConverterScreen() {
                         </View>
                       ) : null}
                     </View>
-                    <AppText tone="muted" numberOfLines={1} style={styles.rateMeta}>
-                      {meta}
-                      {target.rate?.isCustom && target.liveRate
-                        ? ` · live ${formatConvertedValue(target.liveRate.rate, target.code, locale, true)}`
-                        : ''}
-                    </AppText>
                   </Pressable>
                   <Pressable
                     accessibilityLabel={`${expanded[target.code] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.code}`}
@@ -320,11 +306,6 @@ export default function ConverterScreen() {
                     >
                       {converted}
                     </AppText>
-                    {target.rate?.isCustom && target.liveValue !== null ? (
-                      <AppText tone="muted" numberOfLines={1} style={styles.liveValue}>
-                        Live {formatConvertedValue(target.liveValue, target.code, locale)}
-                      </AppText>
-                    ) : null}
                   </Pressable>
                 </View>
               </Swipeable>
@@ -442,29 +423,27 @@ const styles = StyleSheet.create({
   swipeActions: { width: 176, flexDirection: 'row' },
   swipeAction: {
     width: 88,
-    minHeight: 92,
+    minHeight: 64,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
   },
   swipeActionText: { fontSize: 12, textAlign: 'center' },
   targetCard: {
-    minHeight: 92,
+    minHeight: 64,
     borderRadius: radii.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  targetIdentity: { flex: 1, minHeight: 56, justifyContent: 'center', paddingRight: spacing.sm },
+  targetIdentity: { flex: 1, minHeight: 48, justifyContent: 'center', paddingRight: spacing.sm },
   targetTitleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   targetCode: { fontSize: 20, lineHeight: 27 },
   customBadge: { borderWidth: 1.5, borderRadius: radii.sm, paddingHorizontal: 8, paddingVertical: 3 },
   customBadgeText: { fontSize: 11 },
-  rateMeta: { fontSize: 13, lineHeight: 19, marginTop: 3 },
-  targetValueArea: { width: '45%', minHeight: 52, alignItems: 'flex-end', justifyContent: 'center' },
+  targetValueArea: { width: '45%', minHeight: 48, alignItems: 'flex-end', justifyContent: 'center' },
   targetValue: { width: '100%', fontSize: 27, lineHeight: 35, textAlign: 'right', letterSpacing: -0.4 },
-  liveValue: { fontSize: 12, lineHeight: 17, textAlign: 'right' },
   addButton: {
     minHeight: 52,
     borderWidth: 1.5,
