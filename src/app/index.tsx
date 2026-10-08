@@ -170,16 +170,13 @@ export default function ConverterScreen() {
     updateExpression(expression + key);
   }
 
-  function activateInput(row: CurrencyInputRow) {
+  function beginEditing(row: CurrencyInputRow) {
     setShowKeypad(true);
-    if (row.active || row.factor === null) return;
-    setExactActiveValue(row.value);
-    setExpressionState({
-      decimal,
-      text: row.value === null ? '' : formatEditableValue(row.value, formatLocale),
-    });
+    if (row.factor === null) return;
+    setExactActiveValue(null);
+    setExpressionState({ decimal, text: '' });
     setActiveInputKey(row.key);
-    if (hapticsEnabled) void Haptics.selectionAsync();
+    if (!row.active && hapticsEnabled) void Haptics.selectionAsync();
   }
 
   const lastUpdate = rateCache
@@ -346,8 +343,8 @@ export default function ConverterScreen() {
                     cursorColor={colors.accent}
                     editable={row.active || row.factor !== null}
                     onChangeText={row.active ? updateExpression : undefined}
-                    onFocus={() => activateInput(row)}
-                    onPressIn={() => setShowKeypad(true)}
+                    onFocus={() => setShowKeypad(true)}
+                    onPressIn={() => beginEditing(row)}
                     placeholder="—"
                     placeholderTextColor={colors.muted}
                     selectionColor={colors.accent}

@@ -52,17 +52,20 @@ describe('converter workflow', () => {
     expect(screen.getByLabelText('EUR amount input').props.value).toBe('1.80');
   });
 
-  it('makes any focused currency editable in place with two decimal places', async () => {
+  it('clears any pressed currency input before accepting a new value', async () => {
     const screen = await render(<ConverterScreen />);
     await act(async () => {
-      screen.getByLabelText('EUR amount input').props.onFocus();
+      screen.getByLabelText('EUR amount input').props.onPressIn();
     });
     expect(useAppStore.getState().sourceCurrency).toBe('USD');
-    expect(screen.getByLabelText('EUR amount input').props.value).toBe('0.90');
-    expect(screen.getByLabelText('USD amount input').props.value).toBe('1.00');
+    expect(screen.getByLabelText('EUR amount input').props.value).toBe('');
+    expect(screen.getByLabelText('USD amount input').props.value).toBe('—');
+    await fireEvent.press(screen.getByLabelText('2'));
+    expect(screen.getByLabelText('EUR amount input').props.value).toBe('2');
+    expect(screen.getByLabelText('USD amount input').props.value).toBe('2.22');
   });
 
-  it('preserves tiny selected values internally while showing two decimals', async () => {
+  it('clears a selected sub-cent input without affecting keypad entry', async () => {
     useAppStore.setState({
       sourceCurrency: 'IDR',
       defaultCurrency: 'IDR',
@@ -78,10 +81,12 @@ describe('converter workflow', () => {
     const screen = await render(<ConverterScreen />);
 
     await act(async () => {
-      screen.getByLabelText('USD amount input').props.onFocus();
+      screen.getByLabelText('USD amount input').props.onPressIn();
     });
-    expect(screen.getByLabelText('USD amount input').props.value).toBe('0.00');
-    expect(screen.getByLabelText('IDR amount input').props.value).toBe('1');
+    expect(screen.getByLabelText('USD amount input').props.value).toBe('');
+    expect(screen.getByLabelText('IDR amount input').props.value).toBe('—');
+    await fireEvent.press(screen.getByLabelText('1'));
+    expect(screen.getByLabelText('IDR amount input').props.value).toBe('16,000');
   });
 
   it('normalizes the active expression when number separators change', async () => {
@@ -99,7 +104,7 @@ describe('converter workflow', () => {
     const screen = await render(<ConverterScreen />);
 
     await act(async () => {
-      screen.getByLabelText('EUR amount input').props.onFocus();
+      screen.getByLabelText('EUR amount input').props.onPressIn();
     });
     expect(screen.getByLabelText('USD amount input').props.value).toBe('1.00');
     expect(screen.getByLabelText('EUR amount input').props.value).toBe('—');
@@ -197,14 +202,14 @@ describe('converter workflow', () => {
     expect(screen.getByText('CUSTOM')).toBeTruthy();
 
     await act(async () => {
-      screen.getByLabelText('Custom EUR amount input').props.onFocus();
+      screen.getByLabelText('Custom EUR amount input').props.onPressIn();
     });
-    expect(screen.getByLabelText('Custom EUR amount input').props.value).toBe('0.80');
-    expect(screen.getByLabelText('EUR amount input').props.value).toBe('0.90');
+    expect(screen.getByLabelText('Custom EUR amount input').props.value).toBe('');
+    expect(screen.getByLabelText('EUR amount input').props.value).toBe('—');
     expect(screen.getByText('CUSTOM')).toBeTruthy();
 
     await act(async () => {
-      screen.getByLabelText('EUR amount input').props.onFocus();
+      screen.getByLabelText('EUR amount input').props.onPressIn();
     });
     await fireEvent.press(screen.getByLabelText('Delete custom EUR rate'));
     expect(useAppStore.getState().customRates).toEqual([]);
