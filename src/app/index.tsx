@@ -7,7 +7,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import Swipeable, {
@@ -179,6 +178,22 @@ export default function ConverterScreen() {
     if (!row.active && hapticsEnabled) void Haptics.selectionAsync();
   }
 
+  function preserveValueAfterDelete(row: CurrencyInputRow) {
+    if (!row.active) return;
+    const fallback = descriptors.find(
+      (descriptor) => descriptor.key === `${sourceCurrency}-provider`,
+    );
+    const fallbackValue = valueInUsd !== null && fallback?.factor
+      ? valueInUsd * fallback.factor
+      : null;
+    setActiveInputKey(fallback?.key ?? `${sourceCurrency}-provider`);
+    setExactActiveValue(fallbackValue);
+    setExpressionState({
+      decimal,
+      text: fallbackValue === null ? '' : formatEditableValue(fallbackValue, formatLocale),
+    });
+  }
+
   const lastUpdate = rateCache
     ? formatRelativeUpdate(rateCache.fetchedAt, locale)
     : 'not available';
@@ -227,7 +242,7 @@ export default function ConverterScreen() {
               : row.value === null
               ? '—'
               : formatConvertedValue(row.value, row.code, formatLocale);
-            const canManage = !row.active && (row.kind === 'custom' || row.code !== sourceCurrency);
+            const canManage = row.kind === 'custom' || row.code !== sourceCurrency;
             return (
               <Swipeable
                 childrenContainerStyle={{ backgroundColor: colors.background }}
@@ -283,6 +298,7 @@ export default function ConverterScreen() {
                         methods.close();
                         openSwipeable.current = null;
                         swipeableRefs.current[row.key] = null;
+                        preserveValueAfterDelete(row);
                         if (row.customRate) {
                           deleteCustomRate(row.customRate.base, row.customRate.quote);
                         } else {
@@ -331,33 +347,36 @@ export default function ConverterScreen() {
                       <AppText tone="accent" weight="bold" style={styles.editingLabel}>EDITING</AppText>
                     ) : null}
                   </View>
-                  <TextInput
+                  <Pressable
                     accessibilityLabel={`${row.kind === 'custom' ? 'Custom ' : ''}${row.code} amount input`}
                     accessibilityHint={row.active
                       ? 'Enter a calculator expression'
                       : row.factor === null
                         ? 'A conversion rate is unavailable'
                         : 'Tap to edit this currency amount'}
-                    allowFontScaling
-                    autoCorrect={false}
-                    cursorColor={colors.accent}
-                    editable={row.active || row.factor !== null}
-                    onChangeText={row.active ? updateExpression : undefined}
-                    onFocus={() => setShowKeypad(true)}
-                    onPressIn={() => beginEditing(row)}
-                    placeholder="—"
-                    placeholderTextColor={colors.muted}
-                    selectionColor={colors.accent}
-                    showSoftInputOnFocus={false}
-                    style={[
+                    accessibilityRole="button"
+                    accessibilityValue={{ text: displayedValue }}
+                    disabled={!row.active && row.factor === null}
+                    onPress={() => beginEditing(row)}
+                    style={({ pressed }) => [
                       styles.amountInput,
-                      {
-                        color: row.kind === 'custom' ? colors.accent : colors.text,
-                        fontSize: amountFontSize(displayedValue),
-                      },
+                      pressed && styles.pressed,
                     ]}
-                    value={displayedValue}
-                  />
+                  >
+                    <AppText
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.62}
+                      numberOfLines={1}
+                      tone={row.kind === 'custom' ? 'accent' : 'primary'}
+                      weight="extraBold"
+                      style={[
+                        styles.amountValue,
+                        { fontSize: amountFontSize(displayedValue) },
+                      ]}
+                    >
+                      {displayedValue === '' ? ' ' : displayedValue}
+                    </AppText>
+                  </Pressable>
                 </View>
               </Swipeable>
             );
@@ -467,9 +486,12 @@ const styles = StyleSheet.create({
   amountInput: {
     width: '52%',
     minHeight: 48,
-    padding: 0,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  amountValue: {
+    width: '100%',
     fontFamily: fontFamilies.extraBold,
-    fontSize: 27,
     lineHeight: 35,
     textAlign: 'right',
     letterSpacing: -0.4,
