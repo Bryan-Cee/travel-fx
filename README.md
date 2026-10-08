@@ -1,6 +1,6 @@
 # Travel FX
 
-Travel FX is an offline-friendly iOS and Android currency converter built with Expo SDK 57, Expo Router, React Native, TypeScript, and Zustand. It supports one editable source, any number of simultaneous targets, a safe calculator expression parser, reciprocal pair-specific custom rates, system/manual themes, and locale-aware formatting.
+Travel FX is an offline-friendly iOS and Android currency converter built with Expo SDK 57, Expo Router, React Native, TypeScript, and Zustand. Every saved currency is an editable input: selecting any amount makes it the active source and updates all other currencies immediately. The app also includes a safe calculator expression parser, reciprocal pair-specific custom rates, default-currency and number-format preferences, system/manual themes, and locale-aware formatting.
 
 ## Run locally
 

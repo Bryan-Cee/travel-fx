@@ -2,8 +2,10 @@ import {
   currencyDigits,
   formatConvertedValue,
   formatCurrencyValue,
+  formatEditableValue,
   formatRelativeUpdate,
   getDecimalSeparator,
+  getNumberFormatLocale,
 } from '../format';
 
 describe('currency formatting', () => {
@@ -23,6 +25,19 @@ describe('currency formatting', () => {
   it('formats converted values without repeating a currency symbol', () => {
     expect(formatConvertedValue(1250, 'USD', 'en-US')).toBe('1,250.00');
     expect(formatConvertedValue(149.5, 'JPY', 'en-US')).toBe('150');
+  });
+
+  it('applies explicit separator preferences independently of device locale', () => {
+    expect(getNumberFormatLocale('en-US', 'period-comma')).toBe('de-DE');
+    expect(formatConvertedValue(1234.56, 'USD', getNumberFormatLocale('en-US', 'period-comma')))
+      .toBe('1.234,56');
+    expect(formatConvertedValue(1234.56, 'USD', getNumberFormatLocale('de-DE', 'comma-period')))
+      .toBe('1,234.56');
+  });
+
+  it('limits newly active input values to two decimal places', () => {
+    expect(formatEditableValue(49193.447448, 'en-US')).toBe('49193.45');
+    expect(formatEditableValue(4.2, 'de-DE')).toBe('4,20');
   });
 
   it('formats recent updates without Intl.RelativeTimeFormat', () => {

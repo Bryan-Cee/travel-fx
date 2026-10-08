@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
@@ -19,6 +20,8 @@ const appearanceOptions: { label: string; value: ThemePreference }[] = [
 export default function SettingsScreen() {
   const {
     themePreference,
+    defaultCurrency,
+    numberFormat,
     hapticsEnabled,
     customRates,
     rateCache,
@@ -35,11 +38,35 @@ export default function SettingsScreen() {
     false: colors.surfaceSelected,
     true: colors.accent,
   };
+  const numberFormatLabel = numberFormat === 'comma-period'
+    ? '1,234.56'
+    : numberFormat === 'period-comma'
+      ? '1.234,56'
+      : numberFormat === 'space-comma'
+        ? '1 234,56'
+        : 'System';
 
   return (
     <Screen padded={false}>
       <ScrollView contentContainerStyle={styles.content}>
         <AppText weight="extraBold" style={styles.title}>Settings</AppText>
+
+        <SectionLabel>Preferences</SectionLabel>
+        <View style={[styles.group, { backgroundColor: colors.surface }]}>
+          <PreferenceRow
+            description="Used first when Travel FX opens"
+            onPress={() => router.push({ pathname: '/currency-picker', params: { mode: 'default' } })}
+            title="Default currency"
+            value={defaultCurrency}
+          />
+          <View style={{ backgroundColor: colors.border, height: StyleSheet.hairlineWidth }} />
+          <PreferenceRow
+            description="Grouping and decimal separators"
+            onPress={() => router.push('/number-format')}
+            title="Number format"
+            value={numberFormatLabel}
+          />
+        </View>
 
         <SectionLabel>Appearance</SectionLabel>
         <View
@@ -228,6 +255,35 @@ function SettingRow({
   );
 }
 
+function PreferenceRow({
+  description,
+  onPress,
+  title,
+  value,
+}: {
+  description: string;
+  onPress: () => void;
+  title: string;
+  value: string;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <Pressable
+      accessibilityLabel={`${title}, ${value}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.preferenceRow, pressed && styles.pressed]}
+    >
+      <View style={styles.rowCopy}>
+        <AppText weight="bold" style={styles.settingTitle}>{title}</AppText>
+        <AppText tone="muted" style={styles.description}>{description}</AppText>
+      </View>
+      <AppText tone="accent" weight="bold">{value}</AppText>
+      <Ionicons color={colors.muted} name="chevron-forward" size={20} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: spacing.xl, paddingBottom: spacing.xxl },
   title: { fontSize: typeScale.display, lineHeight: 43, letterSpacing: -1 },
@@ -241,6 +297,7 @@ const styles = StyleSheet.create({
   segment: { flex: 1, minHeight: 48, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
   group: { borderRadius: radii.md, overflow: 'hidden' },
   settingRow: { minHeight: 92, padding: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  preferenceRow: { minHeight: 82, padding: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   refreshRow: { minHeight: 88, padding: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   rowCopy: { flex: 1 },
   settingTitle: { fontSize: 17 },

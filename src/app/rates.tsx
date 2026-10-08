@@ -6,7 +6,7 @@ import { BottomNavigation } from '@/components/bottom-navigation';
 import { Screen } from '@/components/screen';
 import { radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { formatConvertedValue } from '@/services/format';
+import { formatConvertedValue, getNumberFormatLocale } from '@/services/format';
 import { resolveRate } from '@/services/rates';
 import { useAppStore } from '@/store/use-app-store';
 
@@ -16,11 +16,13 @@ export default function RatesScreen() {
     targetCurrencies,
     rateCache,
     customRates,
+    numberFormat,
     moveTarget,
     removeTarget,
     deleteCustomRate,
   } = useAppStore();
   const { colors, locale } = useAppTheme();
+  const formatLocale = getNumberFormatLocale(locale, numberFormat);
 
   return (
     <Screen padded={false}>
@@ -41,7 +43,7 @@ export default function RatesScreen() {
               ),
             );
             const rateText = resolved
-              ? formatConvertedValue(resolved.rate, quote, locale, true)
+              ? formatConvertedValue(resolved.rate, quote, formatLocale, true)
               : '—';
             return (
               <View key={quote} style={[styles.card, { backgroundColor: colors.surface }]}>
@@ -60,7 +62,7 @@ export default function RatesScreen() {
                     </AppText>
                     <AppText tone="muted" style={styles.rateStatus}>
                       {resolved?.isCustom && live
-                        ? `Live ${formatConvertedValue(live.rate, quote, locale, true)}`
+                        ? `Live ${formatConvertedValue(live.rate, quote, formatLocale, true)}`
                         : live
                           ? 'Using live rate'
                           : 'Live rate unavailable'}

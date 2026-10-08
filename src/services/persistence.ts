@@ -1,15 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { CustomRate, PersistedState, RateCache, ThemePreference } from '@/types';
+import {
+  CustomRate,
+  NumberFormatPreference,
+  PersistedState,
+  RateCache,
+  ThemePreference,
+} from '@/types';
 
 export const STORAGE_KEY = '@travel-fx/state';
 export const defaultPersistedState: PersistedState = {
-  version: 2,
+  version: 3,
   sourceCurrency: 'USD',
+  defaultCurrency: 'USD',
   targetCurrencies: [],
   onboardingComplete: false,
   hapticsEnabled: true,
   themePreference: 'system',
+  numberFormat: 'system',
   customRates: [],
   rateCache: null,
 };
@@ -24,6 +32,10 @@ function isCurrencyCode(value: unknown): value is string {
 }
 function isTheme(value: unknown): value is ThemePreference {
   return value === 'system' || value === 'light' || value === 'dark';
+}
+function isNumberFormat(value: unknown): value is NumberFormatPreference {
+  return value === 'system' || value === 'comma-period' ||
+    value === 'period-comma' || value === 'space-comma';
 }
 function parseCustomRates(value: unknown): CustomRate[] | null {
   if (!Array.isArray(value)) return null;
@@ -63,28 +75,46 @@ export function migrateAndValidate(value: unknown): LoadResult {
   if (!isRecord(value)) return { state: defaultPersistedState, issue: 'Saved data was unreadable and has been reset.' };
   const version = value.version;
   const migrated = version === 1
-    ? { ...value, version: 2, themePreference: 'system', customRates: value.customRates ?? [] }
-    : value;
+    ? {
+        ...value,
+        version: 3,
+        themePreference: 'system',
+        customRates: value.customRates ?? [],
+        defaultCurrency: value.sourceCurrency,
+        numberFormat: 'system',
+      }
+    : version === 2
+      ? {
+          ...value,
+          version: 3,
+          defaultCurrency: value.sourceCurrency,
+          numberFormat: 'system',
+        }
+      : value;
   const customRates = parseCustomRates(migrated.customRates);
   const rateCache = parseRateCache(migrated.rateCache);
   if (
-    migrated.version !== 2 || !isCurrencyCode(migrated.sourceCurrency) ||
+    migrated.version !== 3 || !isCurrencyCode(migrated.sourceCurrency) ||
+    !isCurrencyCode(migrated.defaultCurrency) ||
     !Array.isArray(migrated.targetCurrencies) || !migrated.targetCurrencies.every(isCurrencyCode) ||
     typeof migrated.onboardingComplete !== 'boolean' || typeof migrated.hapticsEnabled !== 'boolean' ||
-    !isTheme(migrated.themePreference) || customRates === null || rateCache === undefined
+    !isTheme(migrated.themePreference) || !isNumberFormat(migrated.numberFormat) ||
+    customRates === null || rateCache === undefined
   ) return { state: defaultPersistedState, issue: 'Saved data failed validation and has been reset.' };
   return {
     state: {
-      version: 2,
+      version: 3,
       sourceCurrency: migrated.sourceCurrency,
+      defaultCurrency: migrated.defaultCurrency,
       targetCurrencies: [...new Set(migrated.targetCurrencies)].filter((code) => code !== migrated.sourceCurrency),
       onboardingComplete: migrated.onboardingComplete,
       hapticsEnabled: migrated.hapticsEnabled,
       themePreference: migrated.themePreference,
+      numberFormat: migrated.numberFormat,
       customRates,
       rateCache,
     },
-    issue: version === 1 ? 'Saved data was upgraded to the latest format.' : null,
+    issue: version === 1 || version === 2 ? 'Saved data was upgraded to the latest format.' : null,
   };
 }
 

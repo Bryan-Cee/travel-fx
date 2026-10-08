@@ -12,11 +12,11 @@ International travelers who need quick, trustworthy fiat currency conversions wh
 
 ## Product Purpose
 
-Travel FX converts one editable source amount into multiple destination currencies at once. It combines a safe calculator, current reference rates, persistent offline data, and pair-specific custom rates so travelers can compare provider rates with the rate they can actually obtain.
+Travel FX presents every saved currency as an editable amount. Tapping any row makes that currency the active calculation source and updates every other row immediately. It combines a safe calculator, current reference rates, persistent offline data, and pair-specific custom rates so travelers can compare provider rates with the rate they can actually obtain.
 
 ## Positioning
 
-The product treats conversion as an active travel utility: users can calculate expressions in place, compare any number of currencies simultaneously, promote any result to the source, and override only the real-world currency pairs where their card or exchange desk differs from the reference rate.
+The product treats conversion as an active travel utility: users can calculate expressions from any currency row, compare any number of currencies simultaneously, choose a preferred default currency and number format, and override only the real-world currency pairs where their card or exchange desk differs from the reference rate.
 
 ## Operating Context
 
@@ -25,7 +25,7 @@ The app is used one-handed on iOS and Android, often while traveling, comparing 
 ## Capabilities and Constraints
 
 - Expo SDK 57, Expo Router, React Native primitives, TypeScript, and Zustand.
-- One source currency, multiple persisted target currencies, and a safe calculator parser without `eval`.
+- Multiple persisted editable currency inputs with one active calculation source and a safe calculator parser without `eval`.
 - Frankfurter v2 blended fiat rates, local cross-rate derivation, 12-hour cache freshness, manual refresh, and offline fallback.
 - Positive finite pair-specific custom rates with automatic reciprocal behavior and pair-only precedence.
 - No accounts, backend, ads, analytics, purchases, historical charts, crypto, or precious metals.

@@ -14,7 +14,11 @@ import { AppText } from '@/components/app-text';
 import { Screen } from '@/components/screen';
 import { fontFamilies, radii, spacing, typeScale } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { formatConvertedValue, getDecimalSeparator } from '@/services/format';
+import {
+  formatConvertedValue,
+  getDecimalSeparator,
+  getNumberFormatLocale,
+} from '@/services/format';
 import { resolveRate } from '@/services/rates';
 import { useAppStore } from '@/store/use-app-store';
 
@@ -26,6 +30,7 @@ export default function CustomRateScreen() {
   const base = typeof params.base === 'string' && /^[A-Z]{3}$/.test(params.base) ? params.base : '';
   const quote = typeof params.quote === 'string' && /^[A-Z]{3}$/.test(params.quote) ? params.quote : '';
   const customRates = useAppStore((state) => state.customRates);
+  const numberFormat = useAppStore((state) => state.numberFormat);
   const rateCache = useAppStore((state) => state.rateCache);
   const saveCustomRate = useAppStore((state) => state.saveCustomRate);
   const deleteCustomRate = useAppStore((state) => state.deleteCustomRate);
@@ -41,7 +46,8 @@ export default function CustomRateScreen() {
       ? existing.rate
       : 1 / existing.rate
     : null;
-  const decimal = getDecimalSeparator(locale);
+  const formatLocale = getNumberFormatLocale(locale, numberFormat);
+  const decimal = getDecimalSeparator(formatLocale);
   const [value, setValue] = useState(currentRate ? String(currentRate).replace('.', decimal) : '');
   const parsed = Number(value.replace(decimal, '.'));
   const valid = base !== '' && quote !== '' && base !== quote && Number.isFinite(parsed) && parsed > 0;
@@ -92,7 +98,7 @@ export default function CustomRateScreen() {
 
               <AppText tone="muted" style={styles.help}>
                 {live
-                  ? `Live rate is ${formatConvertedValue(live.rate, quote, locale, true)}. Your rate replaces it on the Convert screen and applies in both directions.`
+                  ? `Live rate is ${formatConvertedValue(live.rate, quote, formatLocale, true)}. Your rate replaces it on the Convert screen and applies in both directions.`
                   : 'Your rate replaces the unavailable live rate and applies in both directions.'}
               </AppText>
 
@@ -104,7 +110,7 @@ export default function CustomRateScreen() {
 
               <View style={[styles.preview, { backgroundColor: colors.surface }]}>
                 <AppText tone="muted" style={styles.previewLabel}>
-                  Preview · {formatConvertedValue(previewAmount, base, locale)} {base}
+                  Preview · {formatConvertedValue(previewAmount, base, formatLocale)} {base}
                 </AppText>
                 <AppText
                   adjustsFontSizeToFit
@@ -115,7 +121,7 @@ export default function CustomRateScreen() {
                   style={styles.previewValue}
                 >
                   {valid
-                    ? `${formatConvertedValue(previewAmount * parsed, quote, locale, true)} ${quote}`
+                    ? `${formatConvertedValue(previewAmount * parsed, quote, formatLocale, true)} ${quote}`
                     : `— ${quote}`}
                 </AppText>
               </View>
