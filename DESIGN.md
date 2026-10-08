@@ -58,7 +58,7 @@ A recessed currency selector anchors the left side. The editable expression is r
 
 ### Target card
 
-Target cards are compact single-line rows: currency identity and an optional Custom badge occupy the left, while the converted value occupies the right. Detailed live and custom rate context lives in the Rates screen rather than increasing converter-row height. Tapping identity promotes the currency to source; tapping the value toggles expanded precision. Swiping left reveals pair-specific Edit rate and Delete actions; starting a vertical list scroll closes an open action tray.
+Target cards are compact single-line rows: currency identity and an optional Custom badge occupy the left, while the converted value occupies the right. An active custom override adds a second, badged row directly after the original provider conversion so both values remain visible. Detailed rate context lives in the Rates screen rather than increasing converter-row height. Tapping identity promotes the currency to source; tapping the value toggles expanded precision. Swiping left reveals pair-specific Edit rate and Delete actions; deleting a custom row removes only its override, while deleting the provider row removes the target. Starting a vertical list scroll closes an open action tray.
 
 ### Calculator keypad
 

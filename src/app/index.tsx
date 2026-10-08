@@ -33,8 +33,9 @@ import { useAppStore } from '@/store/use-app-store';
 
 type TargetResult = {
   code: string;
+  key: string;
+  kind: 'provider' | 'custom';
   value: number | null;
-  rate: ReturnType<typeof resolveRate>;
 };
 
 export default function ConverterScreen() {
@@ -51,6 +52,7 @@ export default function ConverterScreen() {
     storageNotice,
     setExpressionSource,
     removeTarget,
+    deleteCustomRate,
     refreshRates,
   } = useAppStore();
   const { colors, locale } = useAppTheme();
@@ -64,13 +66,25 @@ export default function ConverterScreen() {
   const result = useMemo(() => evaluateExpression(expression, decimal), [expression, decimal]);
   const sourceValue = result.status === 'valid' ? result.value : null;
 
-  const targets = useMemo<TargetResult[]>(() => targetCurrencies.map((code) => {
-    const rate = resolveRate(sourceCurrency, code, rateCache, customRates);
-    return {
+  const targets = useMemo<TargetResult[]>(() => targetCurrencies.flatMap((code) => {
+    const providerRate = resolveRate(sourceCurrency, code, rateCache, []);
+    const providerTarget: TargetResult = {
       code,
-      value: rate && sourceValue !== null ? sourceValue * rate.rate : null,
-      rate,
+      key: `${code}-provider`,
+      kind: 'provider',
+      value: providerRate && sourceValue !== null ? sourceValue * providerRate.rate : null,
     };
+    const customRate = resolveRate(sourceCurrency, code, rateCache, customRates);
+    if (!customRate?.isCustom) return [providerTarget];
+    return [
+      providerTarget,
+      {
+        code,
+        key: `${code}-custom`,
+        kind: 'custom',
+        value: sourceValue !== null ? sourceValue * customRate.rate : null,
+      },
+    ];
   }), [customRates, rateCache, sourceCurrency, sourceValue, targetCurrencies]);
 
   if (!initialized) {
@@ -200,20 +214,20 @@ export default function ConverterScreen() {
           {targets.map((target) => {
             const converted = target.value === null
               ? '—'
-              : formatConvertedValue(target.value, target.code, locale, expanded[target.code]);
+              : formatConvertedValue(target.value, target.code, locale, expanded[target.key]);
             return (
               <Swipeable
                 childrenContainerStyle={{ backgroundColor: colors.background }}
                 containerStyle={styles.swipeable}
                 dragOffsetFromRightEdge={20}
                 friction={2}
-                key={target.code}
+                key={target.key}
                 onSwipeableClose={() => {
-                  const current = swipeableRefs.current[target.code];
+                  const current = swipeableRefs.current[target.key];
                   if (openSwipeable.current === current) openSwipeable.current = null;
                 }}
                 onSwipeableWillOpen={() => {
-                  const current = swipeableRefs.current[target.code];
+                  const current = swipeableRefs.current[target.key];
                   if (openSwipeable.current && openSwipeable.current !== current) {
                     openSwipeable.current.close();
                   }
@@ -221,12 +235,12 @@ export default function ConverterScreen() {
                 }}
                 overshootRight={false}
                 ref={(instance) => {
-                  swipeableRefs.current[target.code] = instance;
+                  swipeableRefs.current[target.key] = instance;
                 }}
                 renderRightActions={(_progress, _translation, methods) => (
                   <View style={styles.swipeActions}>
                     <Pressable
-                      accessibilityLabel={`Edit ${target.code} conversion rate`}
+                      accessibilityLabel={`Edit ${target.kind === 'custom' ? 'custom ' : ''}${target.code} conversion rate`}
                       accessibilityRole="button"
                       onPress={() => {
                         methods.close();
@@ -245,11 +259,21 @@ export default function ConverterScreen() {
                       <AppText weight="bold" style={styles.swipeActionText}>Edit rate</AppText>
                     </Pressable>
                     <Pressable
-                      accessibilityLabel={`Delete ${target.code} conversion`}
+                      accessibilityLabel={target.kind === 'custom'
+                        ? `Delete custom ${target.code} rate`
+                        : `Delete ${target.code} conversion`}
                       accessibilityRole="button"
                       onPress={() => {
                         methods.close();
-                        removeTarget(target.code);
+                        if (target.kind === 'custom') {
+                          const custom = customRates.find((item) => item.enabled && (
+                            (item.base === sourceCurrency && item.quote === target.code) ||
+                            (item.base === target.code && item.quote === sourceCurrency)
+                          ));
+                          if (custom) deleteCustomRate(custom.base, custom.quote);
+                        } else {
+                          removeTarget(target.code);
+                        }
                         if (hapticsEnabled) void Haptics.selectionAsync();
                       }}
                       style={({ pressed }) => [
@@ -263,17 +287,17 @@ export default function ConverterScreen() {
                         weight="bold"
                         style={[styles.swipeActionText, { color: palette.white }]}
                       >
-                        Delete
+                        {target.kind === 'custom' ? 'Delete rate' : 'Delete'}
                       </AppText>
                     </Pressable>
                   </View>
                 )}
                 rightThreshold={54}
-                testID={`swipeable-${target.code}`}
+                testID={`swipeable-${target.key}`}
               >
                 <View style={[styles.targetCard, { backgroundColor: colors.surface }]}>
                   <Pressable
-                    accessibilityLabel={`${target.code} ${target.value ?? 'unavailable'}`}
+                    accessibilityLabel={`${target.kind === 'custom' ? 'Custom ' : ''}${target.code} ${target.value ?? 'unavailable'}`}
                     accessibilityHint="Tap to promote. Swipe left to edit its rate or remove it."
                     accessibilityRole="button"
                     disabled={target.value === null}
@@ -282,7 +306,7 @@ export default function ConverterScreen() {
                   >
                     <View style={styles.targetTitleLine}>
                       <AppText weight="extraBold" style={styles.targetCode}>{target.code}</AppText>
-                      {target.rate?.isCustom ? (
+                      {target.kind === 'custom' ? (
                         <View style={[styles.customBadge, { borderColor: colors.accent }]}>
                           <AppText tone="accent" weight="bold" style={styles.customBadgeText}>CUSTOM</AppText>
                         </View>
@@ -290,17 +314,17 @@ export default function ConverterScreen() {
                     </View>
                   </Pressable>
                   <Pressable
-                    accessibilityLabel={`${expanded[target.code] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.code}`}
+                    accessibilityLabel={`${expanded[target.key] ? 'Use native precision for' : 'Show up to six decimals for'} ${target.kind === 'custom' ? 'custom ' : ''}${target.code}`}
                     accessibilityRole="button"
                     disabled={target.value === null}
-                    onPress={() => setExpanded((current) => ({ ...current, [target.code]: !current[target.code] }))}
+                    onPress={() => setExpanded((current) => ({ ...current, [target.key]: !current[target.key] }))}
                     style={({ pressed }) => [styles.targetValueArea, pressed && styles.pressed]}
                   >
                     <AppText
                       adjustsFontSizeToFit
                       minimumFontScale={0.62}
                       numberOfLines={1}
-                      tone={target.rate?.isCustom ? 'accent' : 'primary'}
+                      tone={target.kind === 'custom' ? 'accent' : 'primary'}
                       weight="extraBold"
                       style={styles.targetValue}
                     >

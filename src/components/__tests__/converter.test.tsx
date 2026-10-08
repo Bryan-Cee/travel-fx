@@ -100,4 +100,25 @@ describe('converter workflow', () => {
     await fireEvent.press(screen.getByLabelText('Delete EUR conversion'));
     expect(useAppStore.getState().targetCurrencies).not.toContain('EUR');
   });
+
+  it('shows provider and badged custom conversions as separate cards', async () => {
+    useAppStore.setState({
+      customRates: [{
+        base: 'USD',
+        quote: 'EUR',
+        rate: 0.8,
+        savedAt: '2026-10-08T05:00:00.000Z',
+        enabled: true,
+      }],
+    });
+    const screen = await render(<ConverterScreen />);
+
+    expect(screen.getByLabelText('EUR 0.9')).toBeTruthy();
+    expect(screen.getByLabelText('Custom EUR 0.8')).toBeTruthy();
+    expect(screen.getByText('CUSTOM')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Delete custom EUR rate'));
+    expect(useAppStore.getState().customRates).toEqual([]);
+    expect(useAppStore.getState().targetCurrencies).toContain('EUR');
+  });
 });
