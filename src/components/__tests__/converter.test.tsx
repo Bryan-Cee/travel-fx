@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import ConverterScreen from '@/app/index';
@@ -64,6 +64,12 @@ describe('converter workflow', () => {
     const screen = await render(<ConverterScreen />);
     expect(screen.getByLabelText('Calculator keypad')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('keypad-overlay').props.style).position).toBe('absolute');
+    await fireEvent.press(screen.getByLabelText('Hide keypad'));
+    expect(screen.queryByLabelText('Calculator keypad')).toBeNull();
+    await act(async () => {
+      screen.getByLabelText('USD expression 1').props.onPressIn();
+    });
+    expect(screen.getByLabelText('Calculator keypad')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Hide keypad'));
     expect(screen.queryByLabelText('Calculator keypad')).toBeNull();
     await fireEvent.press(screen.getByLabelText('Show keypad'));

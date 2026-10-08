@@ -191,6 +191,7 @@ export default function ConverterScreen() {
               cursorColor={colors.accent}
               onChangeText={updateExpression}
               onFocus={() => setShowKeypad(true)}
+              onPressIn={() => setShowKeypad(true)}
               placeholder="0"
               placeholderTextColor={colors.muted}
               selectionColor={colors.accent}
